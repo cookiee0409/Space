@@ -30,9 +30,9 @@ const eventInfo = document.getElementById("eventInfo");
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x031217);
-scene.fog = new THREE.FogExp2(0x04232d, 0.0065);
+scene.fog = new THREE.FogExp2(0x03202a, 0.0032);
 
-const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 2400);
+const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 4200);
 camera.position.set(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({
@@ -58,6 +58,9 @@ const right = new THREE.Vector3();
 const up = new THREE.Vector3();
 const move = { forward: 0, back: 0, left: 0, right: 0, up: 0, down: 0, boost: 0 };
 const mobileMove = { forward: 0, back: 0, left: 0, right: 0 };
+const seaFloorBase = -360;
+const minDiveY = -560;
+const maxDiveY = 42;
 
 let selectedTarget = "coralGate";
 let autoPilot = null;
@@ -86,7 +89,7 @@ const targets = [
     id: "coralGate",
     ko: "산호문",
     type: "산호 지형",
-    position: new THREE.Vector3(-40, -58, -80),
+    position: new THREE.Vector3(-40, -238, -80),
     color: "#ff9c78",
     info: "따뜻한 해류가 지나며 산호와 암반이 아치처럼 이어진 지점입니다.",
   },
@@ -94,7 +97,7 @@ const targets = [
     id: "kelpCathedral",
     ko: "켈프 성당",
     type: "해조 숲",
-    position: new THREE.Vector3(145, -44, -170),
+    position: new THREE.Vector3(145, -184, -170),
     color: "#8fcf7d",
     info: "높은 줄기들이 물결을 따라 흔들리며 좁은 수로를 만듭니다.",
   },
@@ -102,7 +105,7 @@ const targets = [
     id: "shipwreck",
     ko: "침몰선",
     type: "난파 지점",
-    position: new THREE.Vector3(230, -66, 80),
+    position: new THREE.Vector3(230, -286, 80),
     color: "#d8a15f",
     info: "녹슨 선체 틈 사이로 탐조등이 닿으면 잔해의 윤곽이 떠오릅니다.",
   },
@@ -110,7 +113,7 @@ const targets = [
     id: "ventSpire",
     ko: "열수 첨탑",
     type: "지열 지형",
-    position: new THREE.Vector3(-225, -82, -235),
+    position: new THREE.Vector3(-225, -392, -235),
     color: "#ffd36b",
     info: "검은 연기처럼 보이는 뜨거운 물기둥이 해저에서 천천히 솟습니다.",
   },
@@ -118,7 +121,7 @@ const targets = [
     id: "glassTrench",
     ko: "유리 해구",
     type: "심해 협곡",
-    position: new THREE.Vector3(-310, -104, 65),
+    position: new THREE.Vector3(-310, -455, 65),
     color: "#73d7ff",
     info: "가파른 암반과 청록색 반사가 겹쳐 깊이를 가늠하기 어려운 해구입니다.",
   },
@@ -126,7 +129,7 @@ const targets = [
     id: "abyssArch",
     ko: "심연 아치",
     type: "암반 구조",
-    position: new THREE.Vector3(40, -92, 285),
+    position: new THREE.Vector3(40, -420, 285),
     color: "#b8a4ff",
     info: "바닥 가까이에 누운 커다란 암석 고리가 먼 항로의 기준점처럼 서 있습니다.",
   },
@@ -136,7 +139,9 @@ const targetMap = new Map();
 const labelSprites = [];
 const beaconObjects = [];
 const eventGroup = new THREE.Group();
+const marineLifeGroup = new THREE.Group();
 scene.add(eventGroup);
+scene.add(marineLifeGroup);
 
 let plankton;
 let sonarSweep = 0;
@@ -145,6 +150,7 @@ setupLights();
 setupSeascape();
 setupTargets();
 setupPlankton();
+setupMarineLife();
 setupUI();
 resetDive();
 animate();
@@ -176,7 +182,7 @@ function setupSeascape() {
 }
 
 function makeSeafloor() {
-  const geometry = new THREE.PlaneGeometry(1450, 1450, 144, 144);
+  const geometry = new THREE.PlaneGeometry(1850, 1850, 156, 156);
   const positions = geometry.attributes.position;
   for (let i = 0; i < positions.count; i += 1) {
     const x = positions.getX(i);
@@ -185,7 +191,8 @@ function makeSeafloor() {
       Math.sin(x * 0.018) * 5.5 +
       Math.cos(y * 0.015) * 7 +
       Math.sin((x + y) * 0.011) * 4.5 -
-      72;
+      Math.abs(Math.sin(x * 0.004) * Math.cos(y * 0.006)) * 54 +
+      seaFloorBase;
     positions.setZ(i, height);
   }
   geometry.computeVertexNormals();
@@ -231,8 +238,8 @@ function makeLightShafts() {
   });
 
   for (let i = 0; i < 18; i += 1) {
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(18, 70, 260, 18, 1, true), material);
-    shaft.position.set((Math.random() - 0.5) * 1000, -45, (Math.random() - 0.5) * 1000);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(18, 86, 680, 18, 1, true), material);
+    shaft.position.set((Math.random() - 0.5) * 1200, -190, (Math.random() - 0.5) * 1200);
     shaft.rotation.z = (Math.random() - 0.5) * 0.28;
     shaft.rotation.x = (Math.random() - 0.5) * 0.18;
     group.add(shaft);
@@ -250,10 +257,10 @@ function makeDistantHaze() {
 
   for (let i = 0; i < count; i += 1) {
     const index = i * 3;
-    const radius = 220 + Math.random() * 720;
+    const radius = 240 + Math.random() * 820;
     const angle = Math.random() * Math.PI * 2;
     positions[index] = Math.cos(angle) * radius;
-    positions[index + 1] = -95 + Math.random() * 110;
+    positions[index + 1] = -520 + Math.random() * 610;
     positions[index + 2] = Math.sin(angle) * radius;
 
     const color = new THREE.Color(palette[i % palette.length]).multiplyScalar(0.34 + Math.random() * 0.35);
@@ -289,8 +296,8 @@ function makeTerrainRocks() {
 
   for (let i = 0; i < 90; i += 1) {
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(2 + Math.random() * 8, 0), material);
-    const x = (Math.random() - 0.5) * 1180;
-    const z = (Math.random() - 0.5) * 1180;
+    const x = (Math.random() - 0.5) * 1450;
+    const z = (Math.random() - 0.5) * 1450;
     rock.position.set(x, terrainHeight(x, z) + 1.5, z);
     rock.scale.set(1.2 + Math.random() * 2.5, 0.55 + Math.random() * 1.4, 1 + Math.random() * 2);
     rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
@@ -507,6 +514,147 @@ function setupPlankton() {
   sub.add(plankton);
 }
 
+function setupMarineLife() {
+  for (let i = 0; i < 42; i += 1) {
+    const fish = makeFish(0.8 + Math.random() * 1.7, i % 5 === 0 ? 0xff9c78 : 0x77d7c8);
+    placeSwimmer(fish, {
+      radius: 120 + Math.random() * 560,
+      y: -70 - Math.random() * 310,
+      speed: 0.12 + Math.random() * 0.22,
+      bob: 3 + Math.random() * 9,
+      phase: Math.random() * Math.PI * 2,
+    });
+    marineLifeGroup.add(fish);
+  }
+
+  for (let i = 0; i < 5; i += 1) {
+    const shark = makeShark(5.5 + Math.random() * 2.8);
+    placeSwimmer(shark, {
+      radius: 240 + Math.random() * 520,
+      y: -150 - Math.random() * 260,
+      speed: 0.08 + Math.random() * 0.08,
+      bob: 6 + Math.random() * 12,
+      phase: Math.random() * Math.PI * 2,
+      predator: true,
+    });
+    marineLifeGroup.add(shark);
+  }
+
+  for (let i = 0; i < 2; i += 1) {
+    const whale = makeOceanWhale(13 + Math.random() * 5);
+    placeSwimmer(whale, {
+      radius: 390 + Math.random() * 380,
+      y: -230 - Math.random() * 230,
+      speed: 0.035 + Math.random() * 0.025,
+      bob: 14 + Math.random() * 18,
+      phase: Math.random() * Math.PI * 2,
+      whale: true,
+    });
+    marineLifeGroup.add(whale);
+  }
+  document.documentElement.dataset.oceanLife = String(marineLifeGroup.children.length);
+}
+
+function placeSwimmer(group, data) {
+  group.userData.swim = {
+    center: new THREE.Vector3((Math.random() - 0.5) * 420, data.y, (Math.random() - 0.5) * 420),
+    radius: data.radius,
+    speed: data.speed,
+    bob: data.bob,
+    phase: data.phase,
+    predator: data.predator ?? false,
+    whale: data.whale ?? false,
+  };
+}
+
+function makeFish(size, color) {
+  const group = new THREE.Group();
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.58,
+    metalness: 0.03,
+    emissive: new THREE.Color(color).multiplyScalar(0.14),
+    emissiveIntensity: 0.25,
+  });
+  const finMaterial = new THREE.MeshBasicMaterial({
+    color: 0xd7fff4,
+    transparent: true,
+    opacity: 0.58,
+    side: THREE.DoubleSide,
+  });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(size, 16, 10), bodyMaterial);
+  body.scale.set(1.8, 0.62, 0.72);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(size * 0.72, size * 1.8, 3), finMaterial);
+  tail.position.x = -size * 2.1;
+  tail.rotation.z = Math.PI / 2;
+  const dorsal = new THREE.Mesh(new THREE.ConeGeometry(size * 0.42, size * 0.95, 3), finMaterial);
+  dorsal.position.y = size * 0.66;
+  dorsal.rotation.x = Math.PI;
+  group.add(body, tail, dorsal);
+  group.userData.tail = tail;
+  return group;
+}
+
+function makeShark(size) {
+  const group = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x8fa6ad,
+    roughness: 0.64,
+    metalness: 0.02,
+    emissive: 0x101d22,
+    emissiveIntensity: 0.28,
+  });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(size, 24, 14), material);
+  body.scale.set(2.45, 0.54, 0.62);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(size * 0.48, size * 2.0, 18), material);
+  nose.position.x = size * 2.35;
+  nose.rotation.z = -Math.PI / 2;
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(size * 0.68, size * 1.8, 3), material);
+  tail.position.x = -size * 2.75;
+  tail.rotation.z = Math.PI / 2;
+  const fin = new THREE.Mesh(new THREE.ConeGeometry(size * 0.45, size * 1.15, 3), material);
+  fin.position.y = size * 0.68;
+  fin.rotation.x = Math.PI;
+  group.add(body, nose, tail, fin);
+  group.userData.tail = tail;
+  return group;
+}
+
+function makeOceanWhale(size) {
+  const group = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x526875,
+    roughness: 0.72,
+    metalness: 0.01,
+    emissive: 0x101923,
+    emissiveIntensity: 0.24,
+  });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 18), material);
+  body.scale.set(2.75, 0.72, 0.82);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(size * 0.98, 28, 16), material);
+  head.scale.set(1.36, 0.9, 0.88);
+  head.position.x = size * 2.08;
+  const tailStem = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.22, size * 0.45, size * 2.2, 12), material);
+  tailStem.position.x = -size * 2.85;
+  tailStem.rotation.z = Math.PI / 2;
+  const flukeA = new THREE.Mesh(new THREE.ConeGeometry(size * 0.72, size * 1.55, 3), material);
+  flukeA.position.set(-size * 3.92, size * 0.34, 0);
+  flukeA.rotation.set(0, 0, Math.PI / 2.45);
+  const flukeB = flukeA.clone();
+  flukeB.position.y = -size * 0.34;
+  flukeB.rotation.z = Math.PI - Math.PI / 2.45;
+  const finA = new THREE.Mesh(new THREE.ConeGeometry(size * 0.36, size * 1.8, 3), material);
+  finA.position.set(size * 0.45, -size * 0.38, size * 0.9);
+  finA.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+  const finB = finA.clone();
+  finB.position.z = -size * 0.9;
+  finB.rotation.x = -Math.PI / 2;
+  group.add(body, head, tailStem, flukeA, flukeB, finA, finB);
+  group.userData.tail = tailStem;
+  group.userData.flukes = [flukeA, flukeB];
+  return group;
+}
+
 function makeBeacon(color) {
   const group = new THREE.Group();
   const beam = new THREE.Mesh(
@@ -707,6 +855,7 @@ function animate() {
   const elapsed = clock.elapsedTime;
 
   updateTargets(elapsed);
+  updateMarineLife(elapsed, delta);
   updateEvents(elapsed, delta);
   updateDive(delta, elapsed);
   updateHUD();
@@ -739,6 +888,37 @@ function updateTargets(elapsed) {
   }
 }
 
+function updateMarineLife(elapsed, delta) {
+  marineLifeGroup.children.forEach((creature) => {
+    const swim = creature.userData.swim;
+    if (!swim) return;
+
+    const angle = swim.phase + elapsed * swim.speed;
+    const wobble = Math.sin(elapsed * (swim.predator ? 0.9 : 1.6) + swim.phase);
+    creature.position.set(
+      swim.center.x + Math.cos(angle) * swim.radius,
+      swim.center.y + Math.sin(elapsed * 0.45 + swim.phase) * swim.bob,
+      swim.center.z + Math.sin(angle) * swim.radius * (swim.whale ? 0.42 : 0.68),
+    );
+    const nextAngle = angle + 0.02;
+    const next = new THREE.Vector3(
+      swim.center.x + Math.cos(nextAngle) * swim.radius,
+      creature.position.y,
+      swim.center.z + Math.sin(nextAngle) * swim.radius * (swim.whale ? 0.42 : 0.68),
+    );
+    const heading = next.sub(creature.position).normalize();
+    creature.rotation.y = Math.atan2(heading.x, heading.z) + Math.PI / 2;
+    creature.rotation.z = wobble * (swim.whale ? 0.025 : 0.06);
+
+    if (creature.userData.tail) {
+      creature.userData.tail.rotation.y = Math.sin(elapsed * (swim.whale ? 1.6 : 5.8) + swim.phase) * (swim.whale ? 0.08 : 0.22);
+    }
+    creature.userData.flukes?.forEach((fluke, index) => {
+      fluke.rotation.y = Math.sin(elapsed * 1.45 + swim.phase + index) * 0.08;
+    });
+  });
+}
+
 function updateDive(delta, elapsed) {
   sub.rotation.set(pitch, yaw, Math.sin(elapsed * 0.8) * 0.01, "YXZ");
   camera.getWorldDirection(forward);
@@ -766,7 +946,7 @@ function updateDive(delta, elapsed) {
   const maxSpeed = autoPilot ? 118 : 34 + thrust * 92;
   if (velocity.length() > maxSpeed) velocity.setLength(maxSpeed);
   sub.position.addScaledVector(velocity, delta);
-  sub.position.y = THREE.MathUtils.clamp(sub.position.y, -128, 42);
+  sub.position.y = THREE.MathUtils.clamp(sub.position.y, minDiveY, maxDiveY);
 
   const floor = terrainHeight(sub.position.x, sub.position.z) + 5;
   if (sub.position.y < floor) {
@@ -1091,7 +1271,8 @@ function terrainHeight(x, z) {
     Math.sin(x * 0.018) * 5.5 +
     Math.cos(z * 0.015) * 7 +
     Math.sin((x + z) * 0.011) * 4.5 -
-    72
+    Math.abs(Math.sin(x * 0.004) * Math.cos(z * 0.006)) * 54 +
+    seaFloorBase
   );
 }
 

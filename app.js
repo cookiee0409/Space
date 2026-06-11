@@ -310,11 +310,14 @@ const labelSprites = [];
 const orbitLines = [];
 const moonGroups = [];
 const eventGroup = new THREE.Group();
+const spaceLifeGroup = new THREE.Group();
 scene.add(eventGroup);
+scene.add(spaceLifeGroup);
 
 setupLights();
 setupStarfields();
 setupDust();
+setupSpaceLife();
 setupSolarSystem();
 setupUI();
 resetFlight();
@@ -428,6 +431,141 @@ function setupDust() {
   const dust = new THREE.Points(geometry, material);
   dust.name = "localDust";
   ship.add(dust);
+}
+
+function setupSpaceLife() {
+  for (let i = 0; i < 7; i += 1) {
+    const starfish = makeSpaceStarfish(5 + Math.random() * 5);
+    placeSpaceCreature(starfish, {
+      radius: 260 + Math.random() * 720,
+      y: -110 + Math.random() * 230,
+      speed: 0.018 + Math.random() * 0.026,
+      phase: Math.random() * Math.PI * 2,
+      drift: 0.45 + Math.random() * 0.85,
+    });
+    spaceLifeGroup.add(starfish);
+  }
+
+  for (let i = 0; i < 3; i += 1) {
+    const whale = makeSpaceWhale(11 + Math.random() * 9);
+    placeSpaceCreature(whale, {
+      radius: 520 + Math.random() * 940,
+      y: -160 + Math.random() * 340,
+      speed: 0.01 + Math.random() * 0.014,
+      phase: Math.random() * Math.PI * 2,
+      drift: 0.18 + Math.random() * 0.42,
+      whale: true,
+    });
+    spaceLifeGroup.add(whale);
+  }
+  document.documentElement.dataset.solarLife = String(spaceLifeGroup.children.length);
+}
+
+function placeSpaceCreature(group, data) {
+  group.userData.drift = {
+    center: new THREE.Vector3((Math.random() - 0.5) * 680, data.y, (Math.random() - 0.5) * 680),
+    radius: data.radius,
+    speed: data.speed,
+    phase: data.phase,
+    drift: data.drift,
+    whale: data.whale ?? false,
+  };
+}
+
+function makeSpaceStarfish(size) {
+  const group = new THREE.Group();
+  const coreMaterial = new THREE.MeshStandardMaterial({
+    color: 0x8fdcff,
+    roughness: 0.42,
+    metalness: 0.08,
+    emissive: 0x1c7f8a,
+    emissiveIntensity: 0.8,
+  });
+  const armMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd39aff,
+    roughness: 0.48,
+    metalness: 0.03,
+    emissive: 0x432166,
+    emissiveIntensity: 0.72,
+  });
+  const core = new THREE.Mesh(new THREE.SphereGeometry(size * 0.64, 28, 16), coreMaterial);
+  group.add(core);
+
+  for (let i = 0; i < 5; i += 1) {
+    const arm = new THREE.Mesh(new THREE.ConeGeometry(size * 0.38, size * 2.6, 12), armMaterial);
+    const angle = (Math.PI * 2 * i) / 5;
+    arm.position.set(Math.cos(angle) * size * 1.18, Math.sin(angle) * size * 1.18, 0);
+    arm.rotation.z = -angle + Math.PI / 2;
+    arm.scale.y = 1 + Math.random() * 0.22;
+    group.add(arm);
+
+    const glow = new THREE.PointLight(i % 2 ? 0xd39aff : 0x6ee7ff, 0.22, size * 9, 1.5);
+    glow.position.copy(arm.position).multiplyScalar(1.35);
+    group.add(glow);
+  }
+
+  group.userData.pulseParts = group.children.filter((child) => child.isMesh);
+  return group;
+}
+
+function makeSpaceWhale(size) {
+  const group = new THREE.Group();
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x486a8d,
+    roughness: 0.62,
+    metalness: 0.04,
+    emissive: 0x122a45,
+    emissiveIntensity: 0.54,
+  });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x8fe7ff,
+    transparent: true,
+    opacity: 0.42,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(size, 36, 20), bodyMaterial);
+  body.scale.set(3.3, 0.78, 0.9);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(size * 0.95, 32, 18), bodyMaterial);
+  head.scale.set(1.55, 0.98, 0.95);
+  head.position.x = size * 2.45;
+  const jaw = new THREE.Mesh(new THREE.SphereGeometry(size * 0.62, 24, 12), bodyMaterial);
+  jaw.scale.set(1.7, 0.42, 0.75);
+  jaw.position.set(size * 2.82, -size * 0.46, 0);
+  const tailStem = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.18, size * 0.48, size * 3.1, 16), bodyMaterial);
+  tailStem.position.x = -size * 3.3;
+  tailStem.rotation.z = Math.PI / 2;
+
+  const flukeA = new THREE.Mesh(new THREE.ConeGeometry(size * 0.95, size * 2.1, 3), bodyMaterial);
+  flukeA.position.set(-size * 4.85, size * 0.48, 0);
+  flukeA.rotation.z = Math.PI / 2.5;
+  const flukeB = flukeA.clone();
+  flukeB.position.y = -size * 0.48;
+  flukeB.rotation.z = Math.PI - Math.PI / 2.5;
+
+  const finA = new THREE.Mesh(new THREE.ConeGeometry(size * 0.42, size * 2.4, 3), glowMaterial);
+  finA.position.set(size * 0.65, -size * 0.34, size * 1.05);
+  finA.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+  const finB = finA.clone();
+  finB.position.z = -size * 1.05;
+  finB.rotation.x = -Math.PI / 2;
+
+  const aura = new THREE.Mesh(
+    new THREE.SphereGeometry(size * 3.4, 36, 18),
+    new THREE.MeshBasicMaterial({
+      color: 0x477cff,
+      transparent: true,
+      opacity: 0.055,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  group.add(aura, body, head, jaw, tailStem, flukeA, flukeB, finA, finB);
+  group.userData.tail = tailStem;
+  group.userData.flukes = [flukeA, flukeB];
+  group.userData.aura = aura;
+  return group;
 }
 
 function setupSolarSystem() {
@@ -927,6 +1065,7 @@ function animate() {
   simulationTime += simDelta;
 
   updateSystem(simulationTime, simDelta);
+  updateSpaceLife(simulationTime, simDelta);
   updateEvents(elapsed, delta, simDelta);
   updateFlight(delta, elapsed);
   updateHUD();
@@ -1007,6 +1146,43 @@ function updateSystem(elapsed, delta) {
     dust.rotation.y = Math.sin(elapsed * 0.25) * 0.04;
     dust.material.opacity = THREE.MathUtils.clamp(0.18 + velocity.length() * 0.032, 0.18, 0.8);
   }
+}
+
+function updateSpaceLife(elapsed, delta) {
+  spaceLifeGroup.children.forEach((creature) => {
+    const drift = creature.userData.drift;
+    if (!drift) return;
+
+    const angle = drift.phase + elapsed * drift.speed;
+    const nextAngle = angle + 0.025;
+    creature.position.set(
+      drift.center.x + Math.cos(angle) * drift.radius,
+      drift.center.y + Math.sin(elapsed * drift.drift + drift.phase) * (drift.whale ? 80 : 34),
+      drift.center.z + Math.sin(angle) * drift.radius * (drift.whale ? 0.38 : 0.72),
+    );
+    const next = new THREE.Vector3(
+      drift.center.x + Math.cos(nextAngle) * drift.radius,
+      creature.position.y,
+      drift.center.z + Math.sin(nextAngle) * drift.radius * (drift.whale ? 0.38 : 0.72),
+    );
+    const heading = next.sub(creature.position).normalize();
+    creature.rotation.y = Math.atan2(heading.x, heading.z) + Math.PI / 2;
+    creature.rotation.z = Math.sin(elapsed * 0.7 + drift.phase) * (drift.whale ? 0.035 : 0.16);
+    creature.rotation.x = Math.cos(elapsed * 0.43 + drift.phase) * (drift.whale ? 0.025 : 0.12);
+
+    if (creature.userData.tail) {
+      creature.userData.tail.rotation.y = Math.sin(elapsed * 1.45 + drift.phase) * 0.1;
+    }
+    creature.userData.flukes?.forEach((fluke, index) => {
+      fluke.rotation.y = Math.sin(elapsed * 1.35 + drift.phase + index) * 0.12;
+    });
+    if (creature.userData.aura) {
+      creature.userData.aura.scale.setScalar(1 + Math.sin(elapsed * 0.9 + drift.phase) * 0.045);
+    }
+    creature.userData.pulseParts?.forEach((part, index) => {
+      part.scale.setScalar(1 + Math.sin(elapsed * 1.4 + drift.phase + index) * 0.055);
+    });
+  });
 }
 
 function updateEvents(elapsed, delta, simDelta = delta) {
