@@ -54,7 +54,7 @@ textureLoader.setCrossOrigin("anonymous");
 
 const ship = new THREE.Object3D();
 ship.position.copy(camera.position);
-ship.rotation.set(-0.08, -0.58, 0);
+ship.rotation.set(-0.08, -0.58, 0, "YXZ");
 scene.add(ship);
 ship.add(camera);
 camera.position.set(0, 0, 0);
@@ -973,7 +973,7 @@ function setEventCard(type, name, info) {
 }
 
 function updateFlight(delta, elapsed) {
-  ship.rotation.set(pitch, yaw, Math.sin(elapsed * 0.6) * 0.006);
+  ship.rotation.set(pitch, yaw, Math.sin(elapsed * 0.6) * 0.006, "YXZ");
   camera.getWorldDirection(forward);
   right.set(1, 0, 0).applyQuaternion(ship.quaternion).normalize();
   up.set(0, 1, 0).applyQuaternion(ship.quaternion).normalize();

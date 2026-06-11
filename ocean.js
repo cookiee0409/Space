@@ -48,7 +48,7 @@ renderer.toneMappingExposure = 1.25;
 
 const sub = new THREE.Object3D();
 sub.position.set(-170, -28, 150);
-sub.rotation.set(-0.02, -0.78, 0);
+sub.rotation.set(-0.02, -0.78, 0, "YXZ");
 scene.add(sub);
 sub.add(camera);
 
@@ -740,7 +740,7 @@ function updateTargets(elapsed) {
 }
 
 function updateDive(delta, elapsed) {
-  sub.rotation.set(pitch, yaw, Math.sin(elapsed * 0.8) * 0.01);
+  sub.rotation.set(pitch, yaw, Math.sin(elapsed * 0.8) * 0.01, "YXZ");
   camera.getWorldDirection(forward);
   right.set(1, 0, 0).applyQuaternion(sub.quaternion).normalize();
   up.set(0, 1, 0).applyQuaternion(sub.quaternion).normalize();
