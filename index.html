@@ -50,6 +50,15 @@
             <span id="radarDistanceReadout">-</span>
           </div>
         </div>
+        <div class="visit-panel" aria-label="방문 로그">
+          <div class="visit-head">
+            <span>방문 로그</span>
+            <strong id="visitCountReadout">0</strong>
+          </div>
+          <div class="visit-list" id="visitLogList">
+            <span class="visit-empty">아직 기록된 방문지가 없습니다.</span>
+          </div>
+        </div>
       </section>
 
       <section class="hud hud-right" aria-label="목표 선택">
@@ -66,6 +75,11 @@
           <span id="throttleReadout">35%</span>
         </label>
         <input id="throttleSlider" type="range" min="0" max="100" value="35" />
+        <label class="range-label" for="timeScaleSlider">
+          시간 배속
+          <span id="timeScaleReadout">1x</span>
+        </label>
+        <input id="timeScaleSlider" type="range" min="0" max="8" step="0.25" value="1" />
         <label class="toggle">
           <input id="labelsToggle" type="checkbox" checked />
           <span>행성 이름</span>
@@ -85,13 +99,13 @@
       </section>
 
       <section class="hud help" aria-label="조작 안내">
-        <span>WASD 이동</span>
-        <span>Q/E 상승·하강</span>
+        <span>A/D 좌우</span>
+        <span>E/Q 전후</span>
+        <span>W/S 상하</span>
         <span>Shift 가속</span>
         <span>Space 정지</span>
         <span>휠 줌</span>
-        <span>좌클릭 좌우</span>
-        <span>우클릭 상하</span>
+        <span>좌/우클릭 시점</span>
       </section>
 
       <a class="credits" href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">
@@ -122,6 +136,6 @@
       </div>
     </main>
 
-    <script type="module" src="./app.js?v=20260611h"></script>
+    <script type="module" src="./app.js?v=20260612a"></script>
   </body>
 </html>

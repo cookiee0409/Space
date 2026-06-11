@@ -143,7 +143,8 @@ p {
 }
 
 .radar-head,
-.radar-foot {
+.radar-foot,
+.visit-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -155,6 +156,63 @@ p {
 .radar-head strong {
   color: var(--ink);
   font-size: 0.82rem;
+}
+
+.visit-panel {
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid rgba(168, 217, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(2, 8, 15, 0.36);
+}
+
+.visit-head strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.visit-list {
+  display: grid;
+  gap: 7px;
+  max-height: 136px;
+  margin-top: 9px;
+  overflow: auto;
+}
+
+.visit-empty {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.visit-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 7px 8px;
+  border: 1px solid rgba(168, 217, 255, 0.12);
+  border-radius: 7px;
+  color: #d9edf6;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.76rem;
+  text-align: left;
+}
+
+.visit-item:hover {
+  border-color: rgba(255, 207, 114, 0.44);
+}
+
+.visit-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visit-item small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.7rem;
 }
 
 #radar {
@@ -402,6 +460,10 @@ input[type="range"] {
   }
 
   .radar-panel {
+    display: none;
+  }
+
+  .visit-panel {
     display: none;
   }
 

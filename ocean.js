@@ -638,8 +638,8 @@ function setupUI() {
   });
   canvas.addEventListener("pointermove", (event) => {
     if (activeLookButton === null) return;
-    if (activeLookButton === 0) yaw -= event.movementX * 0.0022;
-    if (activeLookButton === 2) pitch -= event.movementY * 0.0022;
+    yaw -= event.movementX * 0.0022;
+    pitch -= event.movementY * 0.0022;
     pitch = THREE.MathUtils.clamp(pitch, -1.1, 1.05);
     autoPilot = null;
   });
@@ -676,12 +676,12 @@ function setKey(event) {
     stopDive();
     return;
   }
-  if (key === "w") move.forward = value;
-  if (key === "s") move.back = value;
+  if (key === "e") move.forward = value;
+  if (key === "q") move.back = value;
   if (key === "a") move.left = value;
   if (key === "d") move.right = value;
-  if (key === "q") move.down = value;
-  if (key === "e") move.up = value;
+  if (key === "s") move.down = value;
+  if (key === "w") move.up = value;
   if (key === "shift") move.boost = value;
   if (["w", "a", "s", "d", "q", "e", "shift"].includes(key)) {
     autoPilot = null;
