@@ -1,9 +1,14 @@
 import * as THREE from "three";
 
 const canvas = document.getElementById("space");
+const radarCanvas = document.getElementById("radar");
+const radarContext = radarCanvas.getContext("2d");
 const speedReadout = document.getElementById("speedReadout");
 const nearestReadout = document.getElementById("nearestReadout");
 const distanceReadout = document.getElementById("distanceReadout");
+const radarTargetReadout = document.getElementById("radarTargetReadout");
+const radarRangeReadout = document.getElementById("radarRangeReadout");
+const radarDistanceReadout = document.getElementById("radarDistanceReadout");
 const targetSelect = document.getElementById("targetSelect");
 const warpButton = document.getElementById("warpButton");
 const orbitButton = document.getElementById("orbitButton");
@@ -24,6 +29,7 @@ const eventInfo = document.getElementById("eventInfo");
 
 const AU = 95;
 const systemScale = 0.000001;
+const radarRange = 6.75 * AU;
 const textureBase = "./assets/textures/";
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
@@ -743,6 +749,7 @@ function animate() {
   updateEvents(elapsed, delta);
   updateFlight(delta, elapsed);
   updateHUD();
+  updateRadar();
   renderer.render(scene, camera);
   sampleRender(elapsed);
 }
@@ -931,7 +938,7 @@ function spawnBlackHole(elapsed) {
 }
 
 function getForwardEventPosition(distance, spread) {
-  ship.getWorldDirection(forward);
+  camera.getWorldDirection(forward);
   right.set(1, 0, 0).applyQuaternion(ship.quaternion).normalize();
   up.set(0, 1, 0).applyQuaternion(ship.quaternion).normalize();
   return ship.position
@@ -967,7 +974,7 @@ function setEventCard(type, name, info) {
 
 function updateFlight(delta, elapsed) {
   ship.rotation.set(pitch, yaw, Math.sin(elapsed * 0.6) * 0.006);
-  ship.getWorldDirection(forward);
+  camera.getWorldDirection(forward);
   right.set(1, 0, 0).applyQuaternion(ship.quaternion).normalize();
   up.set(0, 1, 0).applyQuaternion(ship.quaternion).normalize();
 
@@ -1062,6 +1069,133 @@ function updateHUD() {
   speedReadout.textContent = `${Math.round(speed).toLocaleString("ko-KR")} km/s`;
   nearestReadout.textContent = nearest.ko;
   distanceReadout.textContent = formatDistance(nearest.distance);
+}
+
+function updateRadar() {
+  if (!radarCanvas || !radarContext) return;
+
+  const rect = radarCanvas.getBoundingClientRect();
+  const size = Math.max(180, Math.floor(rect.width * window.devicePixelRatio));
+  if (radarCanvas.width !== size || radarCanvas.height !== size) {
+    radarCanvas.width = size;
+    radarCanvas.height = size;
+  }
+
+  const context = radarContext;
+  const center = size / 2;
+  const radius = size * 0.45;
+  const scale = radius / radarRange;
+  const target = bodyMap.get(selectedTarget);
+  const targetPosition = target ? getWorldPosition(target) : null;
+  const targetDistance = targetPosition ? targetPosition.distanceTo(ship.position) - target.radius : 0;
+
+  context.clearRect(0, 0, size, size);
+  drawRadarBackground(context, center, radius, size);
+
+  orbitLines.forEach((_, index) => {
+    const body = bodies.filter((item) => item.orbit > 0)[index];
+    if (!body) return;
+    context.beginPath();
+    context.arc(center, center, body.orbit * scale, 0, Math.PI * 2);
+    context.strokeStyle = "rgba(110, 231, 255, 0.13)";
+    context.lineWidth = 1;
+    context.stroke();
+  });
+
+  if (targetPosition) {
+    const targetPoint = projectRadarPoint(targetPosition, center, scale, radius);
+    context.beginPath();
+    context.moveTo(center, center);
+    context.lineTo(targetPoint.x, targetPoint.y);
+    context.strokeStyle = "rgba(255, 207, 114, 0.72)";
+    context.lineWidth = 1.5;
+    context.stroke();
+  }
+
+  bodyMap.forEach((body) => {
+    const position = getWorldPosition(body);
+    const point = projectRadarPoint(position, center, scale, radius);
+    const isTarget = body.name === selectedTarget;
+    const sizeFactor = body.name === "Sun" ? 5.5 : THREE.MathUtils.clamp(body.radius * 0.42, 2.4, 5.2);
+    context.beginPath();
+    context.arc(point.x, point.y, isTarget ? sizeFactor + 2.5 : sizeFactor, 0, Math.PI * 2);
+    context.fillStyle = body.name === "Sun" ? "#ffcf72" : body.color;
+    context.globalAlpha = isTarget ? 1 : 0.86;
+    context.fill();
+    context.globalAlpha = 1;
+    if (isTarget) {
+      context.strokeStyle = "rgba(255, 255, 255, 0.86)";
+      context.lineWidth = 1.5;
+      context.stroke();
+    }
+  });
+
+  const shipPoint = projectRadarPoint(ship.position, center, scale, radius);
+  drawShipMarker(context, shipPoint.x, shipPoint.y);
+
+  radarTargetReadout.textContent = target?.ko ?? "-";
+  radarRangeReadout.textContent = "태양계 전체";
+  radarDistanceReadout.textContent = target ? formatDistance(Math.max(0, targetDistance)) : "-";
+  document.documentElement.dataset.solarRadar = `${bodyMap.size}:${Math.round(shipPoint.x)},${Math.round(shipPoint.y)}`;
+}
+
+function drawRadarBackground(context, center, radius, size) {
+  const gradient = context.createRadialGradient(center, center, radius * 0.05, center, center, radius);
+  gradient.addColorStop(0, "rgba(16, 45, 66, 0.78)");
+  gradient.addColorStop(1, "rgba(0, 6, 12, 0.9)");
+  context.beginPath();
+  context.arc(center, center, radius, 0, Math.PI * 2);
+  context.fillStyle = gradient;
+  context.fill();
+
+  for (let i = 1; i <= 3; i += 1) {
+    context.beginPath();
+    context.arc(center, center, (radius / 3) * i, 0, Math.PI * 2);
+    context.strokeStyle = "rgba(168, 217, 255, 0.12)";
+    context.lineWidth = 1;
+    context.stroke();
+  }
+
+  context.beginPath();
+  context.moveTo(center - radius, center);
+  context.lineTo(center + radius, center);
+  context.moveTo(center, center - radius);
+  context.lineTo(center, center + radius);
+  context.strokeStyle = "rgba(168, 217, 255, 0.1)";
+  context.stroke();
+
+  context.beginPath();
+  context.arc(center, center, radius, 0, Math.PI * 2);
+  context.strokeStyle = "rgba(110, 231, 255, 0.38)";
+  context.lineWidth = Math.max(1, size * 0.006);
+  context.stroke();
+}
+
+function projectRadarPoint(position, center, scale, radius) {
+  const x = center + THREE.MathUtils.clamp(position.x * scale, -radius, radius);
+  const y = center + THREE.MathUtils.clamp(position.z * scale, -radius, radius);
+  return { x, y };
+}
+
+function drawShipMarker(context, x, y) {
+  camera.getWorldDirection(forward);
+  const angle = Math.atan2(forward.x, forward.z);
+  const markerSize = Math.max(8, radarCanvas.width * 0.035);
+
+  context.save();
+  context.translate(x, y);
+  context.rotate(-angle);
+  context.beginPath();
+  context.moveTo(0, -markerSize);
+  context.lineTo(markerSize * 0.68, markerSize * 0.78);
+  context.lineTo(0, markerSize * 0.42);
+  context.lineTo(-markerSize * 0.68, markerSize * 0.78);
+  context.closePath();
+  context.fillStyle = "#ffffff";
+  context.shadowColor = "rgba(110, 231, 255, 0.9)";
+  context.shadowBlur = markerSize * 0.8;
+  context.fill();
+  context.restore();
 }
 
 function updateTargetCard() {

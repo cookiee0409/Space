@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>심해 항행 시뮬레이터</title>
+    <link rel="stylesheet" href="./ocean.css?v=20260611a" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="ocean"></canvas>
+
+      <section class="hud hud-left" aria-label="잠항 상태">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div>
+            <h1>Abyss Drift</h1>
+            <p>심해 자유 항행</p>
+          </div>
+        </div>
+        <div class="readouts">
+          <div>
+            <span>속도</span>
+            <strong id="speedReadout">0 kn</strong>
+          </div>
+          <div>
+            <span>수심</span>
+            <strong id="depthReadout">0 m</strong>
+          </div>
+          <div>
+            <span>최근접 지점</span>
+            <strong id="nearestReadout">-</strong>
+          </div>
+        </div>
+        <div class="sonar-panel" aria-label="심해 소나">
+          <div class="sonar-head">
+            <span>SONAR</span>
+            <strong id="sonarTargetReadout">산호문</strong>
+          </div>
+          <canvas id="sonar" width="260" height="260"></canvas>
+          <div class="sonar-foot">
+            <span id="sonarRangeReadout">480 m</span>
+            <span id="sonarDistanceReadout">-</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="hud hud-right" aria-label="항행 목표">
+        <label for="targetSelect">목표</label>
+        <select id="targetSelect"></select>
+        <div class="control-row">
+          <button id="diveButton" type="button" title="선택한 지점으로 자동 잠항">잠항</button>
+          <button id="circleButton" type="button" title="선택한 지점 주변을 선회">선회</button>
+          <button id="stopButton" type="button" title="추진 정지">정지</button>
+          <button id="resetButton" type="button" title="시작 지점으로 복귀">복귀</button>
+        </div>
+        <label class="range-label" for="thrustSlider">
+          추진력
+          <span id="thrustReadout">42%</span>
+        </label>
+        <input id="thrustSlider" type="range" min="0" max="100" value="42" />
+        <label class="toggle">
+          <input id="labelsToggle" type="checkbox" checked />
+          <span>지점 이름</span>
+        </label>
+        <label class="toggle">
+          <input id="beaconsToggle" type="checkbox" checked />
+          <span>비컨</span>
+        </label>
+        <label class="toggle">
+          <input id="planktonToggle" type="checkbox" checked />
+          <span>부유 입자</span>
+        </label>
+        <label class="toggle">
+          <input id="eventsToggle" type="checkbox" checked />
+          <span>해류 이벤트</span>
+        </label>
+      </section>
+
+      <section class="hud event-card" id="eventCard" aria-live="polite">
+        <span id="eventType">해류 안정</span>
+        <strong id="eventName">정상 잠항</strong>
+        <p id="eventInfo">수온약층과 발광 입자가 잔잔하게 흐르고 있습니다.</p>
+      </section>
+
+      <section class="hud target-card" id="targetCard" aria-live="polite">
+        <span id="targetType">산호 지형</span>
+        <strong id="targetName">산호문</strong>
+        <p id="targetInfo">따뜻한 해류가 지나며 산호와 암반이 아치처럼 이어진 지점입니다.</p>
+      </section>
+
+      <div class="reticle" aria-hidden="true"></div>
+      <div class="depth-vignette" aria-hidden="true"></div>
+      <div class="mobile-controls" aria-label="모바일 항행">
+        <button data-fly="forward" type="button">▲</button>
+        <div>
+          <button data-fly="left" type="button">◀</button>
+          <button data-fly="back" type="button">▼</button>
+          <button data-fly="right" type="button">▶</button>
+        </div>
+      </div>
+    </main>
+
+    <script type="module" src="./ocean.js?v=20260611a"></script>
+  </body>
+</html>
