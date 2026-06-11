@@ -24,4 +24,10 @@ node server.mjs
 
 ## 참고
 
-Three.js는 브라우저에서 jsDelivr CDN을 통해 불러옵니다. 따라서 배포본은 개인 데스크탑에 의존하지 않지만, 사용자의 브라우저가 인터넷과 CDN에 접근할 수 있어야 합니다.
+Three.js는 브라우저에서 jsDelivr CDN을 통해 불러옵니다. 행성 텍스처는 Solar System Scope의 무료 텍스처를 `assets/textures`에 포함해 Vercel에서 함께 호스팅합니다. 따라서 배포본은 개인 데스크탑이나 외부 텍스처 서버에 의존하지 않습니다. 다만 사용자의 브라우저가 Three.js CDN에는 접근할 수 있어야 합니다.
+
+## 텍스처 출처
+
+Planet textures: [Solar System Scope](https://www.solarsystemscope.com/textures/), distributed under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
+
+Solar System Scope는 해당 텍스처가 NASA elevation and imagery data를 기반으로 한다고 설명합니다.

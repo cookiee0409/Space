@@ -231,6 +231,27 @@ input[type="range"] {
   border-right: 0;
 }
 
+.credits {
+  position: fixed;
+  z-index: 3;
+  top: 20px;
+  left: 50%;
+  padding: 7px 10px;
+  border: 1px solid rgba(168, 217, 255, 0.16);
+  border-radius: 7px;
+  color: rgba(238, 247, 255, 0.72);
+  background: rgba(8, 16, 26, 0.45);
+  font-size: 0.72rem;
+  text-decoration: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(14px);
+}
+
+.credits:hover {
+  color: #ffffff;
+  border-color: rgba(110, 231, 255, 0.45);
+}
+
 .target-card,
 .event-card {
   right: 20px;
@@ -364,6 +385,15 @@ input[type="range"] {
     display: none;
   }
 
+  .credits {
+    top: auto;
+    bottom: 12px;
+    max-width: calc(100vw - 24px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .mobile-controls {
     display: flex;
   }
@@ -405,5 +435,9 @@ input[type="range"] {
   .mobile-controls {
     top: 178px;
     bottom: auto;
+  }
+
+  .credits {
+    display: none;
   }
 }

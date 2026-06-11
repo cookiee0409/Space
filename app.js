@@ -24,6 +24,7 @@ const eventInfo = document.getElementById("eventInfo");
 
 const AU = 95;
 const systemScale = 0.000001;
+const textureBase = "./assets/textures/";
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x06111c, 0.00042);
@@ -42,6 +43,9 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.42;
 
+const textureLoader = new THREE.TextureLoader();
+textureLoader.setCrossOrigin("anonymous");
+
 const ship = new THREE.Object3D();
 ship.position.copy(camera.position);
 ship.rotation.set(-0.08, -0.58, 0);
@@ -58,7 +62,7 @@ const mobileMove = { forward: 0, back: 0, left: 0, right: 0 };
 
 let selectedTarget = "Earth";
 let autoPilot = null;
-let mouseDown = false;
+let activeLookButton = null;
 let yaw = ship.rotation.y;
 let pitch = ship.rotation.x;
 let throttle = 0.35;
@@ -72,6 +76,8 @@ const renderStatus = {
   centerPixel: [0, 0, 0, 0],
   sampleLuma: 0,
   lastSampleAt: -1,
+  texturesLoaded: 0,
+  textureErrors: 0,
   webgl: true,
 };
 window.__solarDriftStatus = renderStatus;
@@ -87,6 +93,7 @@ const bodies = [
     speed: 0,
     color: "#ffd26b",
     emissive: "#ff8a35",
+    texture: "2k_sun.jpg",
     info: "모든 항로의 기준점입니다. 가까이 접근하면 화면 전체가 밝게 달아오릅니다.",
   },
   {
@@ -97,6 +104,7 @@ const bodies = [
     orbit: 0.39 * AU,
     speed: 1.62,
     color: "#9b8b78",
+    texture: "2k_mercury.jpg",
     info: "태양에 가장 가까운 작은 행성입니다. 표면은 회색빛 암석으로 표현했습니다.",
   },
   {
@@ -107,6 +115,7 @@ const bodies = [
     orbit: 0.72 * AU,
     speed: 1.18,
     color: "#d8b879",
+    texture: "2k_venus_atmosphere.jpg",
     info: "두꺼운 대기와 황금빛 구름층을 가진 행성입니다.",
   },
   {
@@ -117,8 +126,10 @@ const bodies = [
     orbit: 1 * AU,
     speed: 1,
     color: "#4e9fff",
+    texture: "2k_earth_daymap.jpg",
+    clouds: "2k_earth_clouds.jpg",
     info: "푸른 바다와 흰 구름이 보이는 기준 행성입니다. 시작 위치가 이 근처입니다.",
-    moons: [{ name: "Moon", radius: 1.25, distance: 18, speed: 1.15, color: "#c9c4b7" }],
+    moons: [{ name: "Moon", radius: 1.25, distance: 18, speed: 1.15, color: "#c9c4b7", texture: "2k_moon.jpg" }],
   },
   {
     name: "Mars",
@@ -128,6 +139,7 @@ const bodies = [
     orbit: 1.52 * AU,
     speed: 0.8,
     color: "#d46a43",
+    texture: "2k_mars.jpg",
     info: "붉은 산화철 지표가 돋보이는 행성입니다.",
     moons: [
       { name: "Phobos", radius: 0.55, distance: 11, speed: 1.7, color: "#b99a84" },
@@ -142,6 +154,7 @@ const bodies = [
     orbit: 2.92 * AU,
     speed: 0.43,
     color: "#d2a16c",
+    texture: "2k_jupiter.jpg",
     info: "태양계에서 가장 큰 행성입니다. 띠무늬 대기와 거대한 중력을 암시합니다.",
     moons: [
       { name: "Io", radius: 0.9, distance: 20, speed: 1.3, color: "#e5c36b" },
@@ -158,6 +171,8 @@ const bodies = [
     orbit: 4.1 * AU,
     speed: 0.32,
     color: "#d9c27d",
+    texture: "2k_saturn.jpg",
+    ringTexture: "2k_saturn_ring_alpha.png",
     info: "넓은 고리가 특징인 행성입니다. 가까이 가면 얇은 얼음 고리가 펼쳐집니다.",
     rings: true,
     moons: [
@@ -175,6 +190,7 @@ const bodies = [
     orbit: 5.35 * AU,
     speed: 0.23,
     color: "#7bd6d0",
+    texture: "2k_uranus.jpg",
     info: "청록색 메탄 대기가 은은하게 빛나는 얼음 거대 행성입니다.",
     moons: [
       { name: "Titania", radius: 0.78, distance: 18, speed: 0.78, color: "#b7d3d0" },
@@ -190,6 +206,7 @@ const bodies = [
     orbit: 6.35 * AU,
     speed: 0.18,
     color: "#477cff",
+    texture: "2k_neptune.jpg",
     info: "깊은 파란색 대기와 강한 폭풍을 가진 먼 행성입니다.",
     moons: [
       { name: "Triton", radius: 0.95, distance: 18, speed: 0.86, color: "#d8eef1" },
@@ -353,17 +370,33 @@ function setupSolarSystem() {
     }
 
     if (body.rings) {
+      const ringMaterial = new THREE.MeshBasicMaterial({
+        color: 0xf2dcc1,
+        transparent: true,
+        opacity: 0.78,
+        side: THREE.DoubleSide,
+      });
+      applyTextureToMaterial(ringMaterial, body.ringTexture, { alpha: true });
       const ring = new THREE.Mesh(
         new THREE.RingGeometry(body.radius * 1.45, body.radius * 2.42, 128),
-        new THREE.MeshBasicMaterial({
-          color: 0xf0d8a1,
-          transparent: true,
-          opacity: 0.72,
-          side: THREE.DoubleSide,
-        }),
+        ringMaterial,
       );
       ring.rotation.x = Math.PI / 2.16;
       group.add(ring);
+    }
+
+    if (body.clouds) {
+      const cloudMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.22,
+        roughness: 0.9,
+        depthWrite: false,
+      });
+      applyTextureToMaterial(cloudMaterial, body.clouds, { alpha: true });
+      const clouds = new THREE.Mesh(new THREE.SphereGeometry(body.radius * 1.015, 64, 36), cloudMaterial);
+      clouds.userData.cloudLayer = true;
+      group.add(clouds);
     }
 
     const moons = makeMoonSystem(body);
@@ -398,7 +431,7 @@ function makeMoonSystem(body) {
 
     const moon = new THREE.Mesh(
       new THREE.SphereGeometry(moonSpec.radius, 28, 16),
-      makePlanetMaterial({ color: moonSpec.color, radius: moonSpec.radius }),
+      makePlanetMaterial({ color: moonSpec.color, radius: moonSpec.radius, texture: moonSpec.texture }),
     );
     moon.position.x = body.radius + moonSpec.distance;
     moonPivot.add(moon);
@@ -424,9 +457,11 @@ function makePlanetGeometry(radius) {
 
 function makePlanetMaterial(body) {
   if (body.name === "Sun") {
-    return new THREE.MeshBasicMaterial({
+    const material = new THREE.MeshBasicMaterial({
       map: makeTexture(["#fff1a8", "#ffc45e", "#ff7d38", "#9a2e23"], 512, true),
     });
+    applyTextureToMaterial(material, body.texture);
+    return material;
   }
 
   const palettes = {
@@ -440,7 +475,7 @@ function makePlanetMaterial(body) {
     Mercury: ["#5f5a55", "#a19687", "#ddd1bd", "#3a3735"],
   };
 
-  return new THREE.MeshStandardMaterial({
+  const material = new THREE.MeshStandardMaterial({
     map: makeTexture(palettes[body.name] ?? [body.color, "#ffffff"], 512),
     color: new THREE.Color(body.color).multiplyScalar(1.18),
     roughness: 0.74,
@@ -448,6 +483,33 @@ function makePlanetMaterial(body) {
     emissive: new THREE.Color(body.emissive ?? body.color ?? "#000000"),
     emissiveIntensity: body.emissive ? 0.9 : 0.12,
   });
+  applyTextureToMaterial(material, body.texture);
+  return material;
+}
+
+function applyTextureToMaterial(material, fileName, options = {}) {
+  if (!fileName) return;
+
+  textureLoader.load(
+    `${textureBase}${fileName}`,
+    (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      material.map = texture;
+      if (options.alpha) material.alphaMap = texture;
+      material.needsUpdate = true;
+      renderStatus.texturesLoaded += 1;
+      document.documentElement.dataset.solarTexturesLoaded = String(renderStatus.texturesLoaded);
+    },
+    undefined,
+    () => {
+      renderStatus.textureErrors += 1;
+      document.documentElement.dataset.solarTextureErrors = String(renderStatus.textureErrors);
+      material.needsUpdate = true;
+    },
+  );
 }
 
 function makeTexture(colors, size, solar = false) {
@@ -594,20 +656,25 @@ function setupUI() {
   window.addEventListener("keydown", setKey);
   window.addEventListener("keyup", setKey);
   canvas.addEventListener("pointerdown", (event) => {
-    mouseDown = true;
+    if (event.button !== 0 && event.button !== 2) return;
+    activeLookButton = event.button;
     canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener("pointerup", (event) => {
-    mouseDown = false;
+    if (activeLookButton === event.button) activeLookButton = null;
     canvas.releasePointerCapture(event.pointerId);
   });
+  canvas.addEventListener("pointercancel", () => {
+    activeLookButton = null;
+  });
   canvas.addEventListener("pointermove", (event) => {
-    if (!mouseDown) return;
-    yaw -= event.movementX * 0.0022;
-    pitch -= event.movementY * 0.0022;
+    if (activeLookButton === null) return;
+    if (activeLookButton === 0) yaw -= event.movementX * 0.0022;
+    if (activeLookButton === 2) pitch -= event.movementY * 0.0022;
     pitch = THREE.MathUtils.clamp(pitch, -1.35, 1.35);
     autoPilot = null;
   });
+  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   canvas.addEventListener(
     "wheel",
     (event) => {
@@ -739,6 +806,9 @@ function updateSystem(elapsed, delta) {
   bodyMap.forEach((body) => {
     body.pivot.rotation.y += body.speed * delta * 0.12;
     body.mesh.rotation.y += delta * (body.name === "Sun" ? 0.08 : 0.28);
+    body.group.children.forEach((child) => {
+      if (child.userData.cloudLayer) child.rotation.y += delta * 0.18;
+    });
     body.moonPivots?.forEach((moonPivot) => {
       moonPivot.rotation.y += delta * moonPivot.userData.orbitSpeed;
     });
