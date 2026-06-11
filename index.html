@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>우주 체험 시뮬레이터</title>
+    <link rel="stylesheet" href="./styles.css?v=20260611b" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="space"></canvas>
+
+      <section class="hud hud-left" aria-label="비행 상태">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div>
+            <h1>Solar Drift</h1>
+            <p>태양계 자유 항행</p>
+          </div>
+        </div>
+        <div class="readouts">
+          <div>
+            <span>속도</span>
+            <strong id="speedReadout">0 km/s</strong>
+          </div>
+          <div>
+            <span>가장 가까운 천체</span>
+            <strong id="nearestReadout">-</strong>
+          </div>
+          <div>
+            <span>거리</span>
+            <strong id="distanceReadout">-</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="hud hud-right" aria-label="목표 선택">
+        <label for="targetSelect">목표</label>
+        <select id="targetSelect"></select>
+        <div class="control-row">
+          <button id="warpButton" type="button" title="선택한 행성 쪽으로 자동 항행">워프</button>
+          <button id="orbitButton" type="button" title="선택한 행성 주변에서 관측 궤도로 진입">궤도</button>
+          <button id="resetButton" type="button" title="지구 근처 시작 지점으로 복귀">초기화</button>
+        </div>
+        <label class="range-label" for="throttleSlider">
+          추진력
+          <span id="throttleReadout">35%</span>
+        </label>
+        <input id="throttleSlider" type="range" min="0" max="100" value="35" />
+        <label class="toggle">
+          <input id="labelsToggle" type="checkbox" checked />
+          <span>행성 이름</span>
+        </label>
+        <label class="toggle">
+          <input id="trailsToggle" type="checkbox" checked />
+          <span>궤도선</span>
+        </label>
+      </section>
+
+      <section class="hud help" aria-label="조작 안내">
+        <span>WASD 이동</span>
+        <span>Q/E 상승·하강</span>
+        <span>Shift 가속</span>
+        <span>마우스 드래그 시야</span>
+      </section>
+
+      <section class="hud target-card" id="targetCard" aria-live="polite">
+        <span id="targetType">행성</span>
+        <strong id="targetName">지구</strong>
+        <p id="targetInfo">대기가 푸르게 빛나는 기준 행성입니다.</p>
+      </section>
+
+      <div class="reticle" aria-hidden="true"></div>
+      <div class="vignette" aria-hidden="true"></div>
+      <div class="mobile-controls" aria-label="모바일 비행 조작">
+        <button data-fly="forward" type="button">▲</button>
+        <div>
+          <button data-fly="left" type="button">◀</button>
+          <button data-fly="back" type="button">▼</button>
+          <button data-fly="right" type="button">▶</button>
+        </div>
+      </div>
+    </main>
+
+    <script type="module" src="./app.js?v=20260611d"></script>
+  </body>
+</html>
