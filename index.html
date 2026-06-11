@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>우주 체험 시뮬레이터</title>
-    <link rel="stylesheet" href="./styles.css?v=20260611b" />
+    <link rel="stylesheet" href="./styles.css?v=20260611c" />
     <script type="importmap">
       {
         "imports": {
@@ -47,6 +47,7 @@
         <div class="control-row">
           <button id="warpButton" type="button" title="선택한 행성 쪽으로 자동 항행">워프</button>
           <button id="orbitButton" type="button" title="선택한 행성 주변에서 관측 궤도로 진입">궤도</button>
+          <button id="stopButton" type="button" title="현재 이동 속도를 즉시 줄이고 정지">정지</button>
           <button id="resetButton" type="button" title="지구 근처 시작 지점으로 복귀">초기화</button>
         </div>
         <label class="range-label" for="throttleSlider">
@@ -62,13 +63,29 @@
           <input id="trailsToggle" type="checkbox" checked />
           <span>궤도선</span>
         </label>
+        <label class="toggle">
+          <input id="moonsToggle" type="checkbox" checked />
+          <span>위성</span>
+        </label>
+        <label class="toggle">
+          <input id="eventsToggle" type="checkbox" checked />
+          <span>랜덤 이벤트</span>
+        </label>
       </section>
 
       <section class="hud help" aria-label="조작 안내">
         <span>WASD 이동</span>
         <span>Q/E 상승·하강</span>
         <span>Shift 가속</span>
+        <span>Space 정지</span>
+        <span>휠 줌</span>
         <span>마우스 드래그 시야</span>
+      </section>
+
+      <section class="hud event-card" id="eventCard" aria-live="polite">
+        <span id="eventType">이벤트 대기</span>
+        <strong id="eventName">정상 항행</strong>
+        <p id="eventInfo">랜덤 이벤트가 켜져 있으면 소행성군이나 블랙홀 조우가 발생합니다.</p>
       </section>
 
       <section class="hud target-card" id="targetCard" aria-live="polite">
@@ -89,6 +106,6 @@
       </div>
     </main>
 
-    <script type="module" src="./app.js?v=20260611d"></script>
+    <script type="module" src="./app.js?v=20260611e"></script>
   </body>
 </html>

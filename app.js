@@ -7,20 +7,26 @@ const distanceReadout = document.getElementById("distanceReadout");
 const targetSelect = document.getElementById("targetSelect");
 const warpButton = document.getElementById("warpButton");
 const orbitButton = document.getElementById("orbitButton");
+const stopButton = document.getElementById("stopButton");
 const resetButton = document.getElementById("resetButton");
 const throttleSlider = document.getElementById("throttleSlider");
 const throttleReadout = document.getElementById("throttleReadout");
 const labelsToggle = document.getElementById("labelsToggle");
 const trailsToggle = document.getElementById("trailsToggle");
+const moonsToggle = document.getElementById("moonsToggle");
+const eventsToggle = document.getElementById("eventsToggle");
 const targetType = document.getElementById("targetType");
 const targetName = document.getElementById("targetName");
 const targetInfo = document.getElementById("targetInfo");
+const eventType = document.getElementById("eventType");
+const eventName = document.getElementById("eventName");
+const eventInfo = document.getElementById("eventInfo");
 
 const AU = 95;
 const systemScale = 0.000001;
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x03070d, 0.00072);
+scene.fog = new THREE.FogExp2(0x06111c, 0.00042);
 
 const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 15000);
 camera.position.set(-115, 32, 158);
@@ -34,7 +40,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.08;
+renderer.toneMappingExposure = 1.42;
 
 const ship = new THREE.Object3D();
 ship.position.copy(camera.position);
@@ -57,6 +63,10 @@ let yaw = ship.rotation.y;
 let pitch = ship.rotation.x;
 let throttle = 0.35;
 let lastNearest = null;
+let eventsEnabled = true;
+let nextEventAt = 8;
+let zoomFov = camera.fov;
+let activeEvent = null;
 const renderStatus = {
   frame: 0,
   centerPixel: [0, 0, 0, 0],
@@ -108,7 +118,7 @@ const bodies = [
     speed: 1,
     color: "#4e9fff",
     info: "푸른 바다와 흰 구름이 보이는 기준 행성입니다. 시작 위치가 이 근처입니다.",
-    moon: true,
+    moons: [{ name: "Moon", radius: 1.25, distance: 18, speed: 1.15, color: "#c9c4b7" }],
   },
   {
     name: "Mars",
@@ -119,6 +129,10 @@ const bodies = [
     speed: 0.8,
     color: "#d46a43",
     info: "붉은 산화철 지표가 돋보이는 행성입니다.",
+    moons: [
+      { name: "Phobos", radius: 0.55, distance: 11, speed: 1.7, color: "#b99a84" },
+      { name: "Deimos", radius: 0.42, distance: 15, speed: 1.15, color: "#9f8774" },
+    ],
   },
   {
     name: "Jupiter",
@@ -129,6 +143,12 @@ const bodies = [
     speed: 0.43,
     color: "#d2a16c",
     info: "태양계에서 가장 큰 행성입니다. 띠무늬 대기와 거대한 중력을 암시합니다.",
+    moons: [
+      { name: "Io", radius: 0.9, distance: 20, speed: 1.3, color: "#e5c36b" },
+      { name: "Europa", radius: 0.78, distance: 25, speed: 1.05, color: "#d8e1df" },
+      { name: "Ganymede", radius: 1.05, distance: 31, speed: 0.82, color: "#ad9a83" },
+      { name: "Callisto", radius: 0.96, distance: 38, speed: 0.62, color: "#7f746b" },
+    ],
   },
   {
     name: "Saturn",
@@ -140,6 +160,12 @@ const bodies = [
     color: "#d9c27d",
     info: "넓은 고리가 특징인 행성입니다. 가까이 가면 얇은 얼음 고리가 펼쳐집니다.",
     rings: true,
+    moons: [
+      { name: "Titan", radius: 1.2, distance: 23, speed: 0.9, color: "#d7a35e" },
+      { name: "Rhea", radius: 0.72, distance: 28, speed: 0.72, color: "#c6c5bd" },
+      { name: "Iapetus", radius: 0.65, distance: 34, speed: 0.52, color: "#9c958c" },
+      { name: "Enceladus", radius: 0.55, distance: 40, speed: 1.12, color: "#edf5ff" },
+    ],
   },
   {
     name: "Uranus",
@@ -150,6 +176,11 @@ const bodies = [
     speed: 0.23,
     color: "#7bd6d0",
     info: "청록색 메탄 대기가 은은하게 빛나는 얼음 거대 행성입니다.",
+    moons: [
+      { name: "Titania", radius: 0.78, distance: 18, speed: 0.78, color: "#b7d3d0" },
+      { name: "Oberon", radius: 0.72, distance: 23, speed: 0.62, color: "#97aaa8" },
+      { name: "Miranda", radius: 0.48, distance: 28, speed: 1.18, color: "#d4e6e3" },
+    ],
   },
   {
     name: "Neptune",
@@ -160,12 +191,19 @@ const bodies = [
     speed: 0.18,
     color: "#477cff",
     info: "깊은 파란색 대기와 강한 폭풍을 가진 먼 행성입니다.",
+    moons: [
+      { name: "Triton", radius: 0.95, distance: 18, speed: 0.86, color: "#d8eef1" },
+      { name: "Nereid", radius: 0.46, distance: 27, speed: 0.44, color: "#a9b8c5" },
+    ],
   },
 ];
 
 const bodyMap = new Map();
 const labelSprites = [];
 const orbitLines = [];
+const moonGroups = [];
+const eventGroup = new THREE.Group();
+scene.add(eventGroup);
 
 setupLights();
 setupStarfields();
@@ -176,10 +214,15 @@ resetFlight();
 animate();
 
 function setupLights() {
-  scene.add(new THREE.AmbientLight(0x89a7c4, 0.14));
-  const sunLight = new THREE.PointLight(0xffdf9f, 4.8, 2300, 1.1);
+  scene.add(new THREE.AmbientLight(0xbfdfff, 0.44));
+  scene.add(new THREE.HemisphereLight(0xcdeaff, 0x26334f, 0.52));
+  const sunLight = new THREE.PointLight(0xffdf9f, 6.8, 2800, 1.05);
   sunLight.position.set(0, 0, 0);
   scene.add(sunLight);
+
+  const fillLight = new THREE.DirectionalLight(0x8fc8ff, 1.1);
+  fillLight.position.set(-260, 190, 320);
+  scene.add(fillLight);
 }
 
 function setupStarfields() {
@@ -323,16 +366,10 @@ function setupSolarSystem() {
       group.add(ring);
     }
 
-    if (body.moon) {
-      const moonPivot = new THREE.Object3D();
-      const moon = new THREE.Mesh(
-        new THREE.SphereGeometry(1.25, 32, 18),
-        makePlanetMaterial({ color: "#b9b3a6", radius: 1.25 }),
-      );
-      moon.position.x = body.radius * 4.1;
-      moonPivot.add(moon);
-      group.add(moonPivot);
-      body.moonPivot = moonPivot;
+    const moons = makeMoonSystem(body);
+    if (moons.length > 0) {
+      moons.forEach((moonPivot) => group.add(moonPivot));
+      body.moonPivots = moons;
     }
 
     const label = makeLabel(body.ko);
@@ -346,7 +383,38 @@ function setupSolarSystem() {
       orbitLines.push(orbit);
     }
 
-    bodyMap.set(body.name, { ...body, pivot, group, mesh, label });
+    bodyMap.set(body.name, { ...body, pivot, group, mesh, label, moonPivots: moons });
+  });
+}
+
+function makeMoonSystem(body) {
+  if (!body.moons?.length) return [];
+
+  return body.moons.map((moonSpec, index) => {
+    const moonPivot = new THREE.Object3D();
+    moonPivot.rotation.y = (Math.PI * 2 * index) / body.moons.length;
+    moonPivot.rotation.z = (index % 2 === 0 ? 1 : -1) * 0.12;
+    moonPivot.userData.orbitSpeed = moonSpec.speed;
+
+    const moon = new THREE.Mesh(
+      new THREE.SphereGeometry(moonSpec.radius, 28, 16),
+      makePlanetMaterial({ color: moonSpec.color, radius: moonSpec.radius }),
+    );
+    moon.position.x = body.radius + moonSpec.distance;
+    moonPivot.add(moon);
+
+    const orbit = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(makeCirclePoints(body.radius + moonSpec.distance, 96)),
+      new THREE.LineBasicMaterial({
+        color: 0xbfe9ff,
+        transparent: true,
+        opacity: 0.2,
+      }),
+    );
+    orbit.rotation.x = Math.PI / 2;
+    moonPivot.add(orbit);
+    moonGroups.push(moonPivot);
+    return moonPivot;
   });
 }
 
@@ -374,11 +442,11 @@ function makePlanetMaterial(body) {
 
   return new THREE.MeshStandardMaterial({
     map: makeTexture(palettes[body.name] ?? [body.color, "#ffffff"], 512),
-    color: new THREE.Color(body.color),
-    roughness: 0.9,
+    color: new THREE.Color(body.color).multiplyScalar(1.18),
+    roughness: 0.74,
     metalness: 0.02,
-    emissive: new THREE.Color(body.emissive ?? "#000000"),
-    emissiveIntensity: body.emissive ? 0.9 : 0,
+    emissive: new THREE.Color(body.emissive ?? body.color ?? "#000000"),
+    emissiveIntensity: body.emissive ? 0.9 : 0.12,
   });
 }
 
@@ -440,12 +508,7 @@ function makeLabel(text) {
 }
 
 function makeOrbit(radius) {
-  const points = [];
-  for (let i = 0; i <= 256; i += 1) {
-    const angle = (i / 256) * Math.PI * 2;
-    points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
-  }
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const geometry = new THREE.BufferGeometry().setFromPoints(makeCirclePoints(radius, 256));
   return new THREE.Line(
     geometry,
     new THREE.LineBasicMaterial({
@@ -454,6 +517,15 @@ function makeOrbit(radius) {
       opacity: 0.18,
     }),
   );
+}
+
+function makeCirclePoints(radius, segments) {
+  const points = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+  }
+  return points;
 }
 
 function setupUI() {
@@ -482,6 +554,7 @@ function setupUI() {
     autoPilot = { mode: "orbit", target: selectedTarget, angle: 0 };
   });
 
+  stopButton.addEventListener("click", stopFlight);
   resetButton.addEventListener("click", resetFlight);
 
   throttleSlider.addEventListener("input", () => {
@@ -501,6 +574,23 @@ function setupUI() {
     });
   });
 
+  moonsToggle.addEventListener("change", () => {
+    moonGroups.forEach((group) => {
+      group.visible = moonsToggle.checked;
+    });
+  });
+
+  eventsToggle.addEventListener("change", () => {
+    eventsEnabled = eventsToggle.checked;
+    if (eventsEnabled) {
+      scheduleNextEvent(clock.elapsedTime, 3);
+      setEventCard("이벤트 대기", "정상 항행", "랜덤 이벤트가 켜져 있습니다. 주변 우주를 계속 스캔합니다.");
+    } else {
+      clearActiveEvent();
+      setEventCard("이벤트 꺼짐", "안정 항로", "랜덤 이벤트가 비활성화되어 소행성군과 블랙홀이 생성되지 않습니다.");
+    }
+  });
+
   window.addEventListener("keydown", setKey);
   window.addEventListener("keyup", setKey);
   canvas.addEventListener("pointerdown", (event) => {
@@ -518,6 +608,16 @@ function setupUI() {
     pitch = THREE.MathUtils.clamp(pitch, -1.35, 1.35);
     autoPilot = null;
   });
+  canvas.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      zoomFov = THREE.MathUtils.clamp(zoomFov + Math.sign(event.deltaY) * 4, 38, 82);
+      camera.fov = zoomFov;
+      camera.updateProjectionMatrix();
+    },
+    { passive: false },
+  );
 
   document.querySelectorAll("[data-fly]").forEach((button) => {
     const direction = button.dataset.fly;
@@ -535,6 +635,11 @@ function setupUI() {
 function setKey(event) {
   const value = event.type === "keydown" ? 1 : 0;
   const key = event.key.toLowerCase();
+  if (event.type === "keydown" && event.code === "Space") {
+    event.preventDefault();
+    stopFlight();
+    return;
+  }
   if (key === "w") move.forward = value;
   if (key === "s") move.back = value;
   if (key === "a") move.left = value;
@@ -545,6 +650,11 @@ function setKey(event) {
   if (["w", "a", "s", "d", "q", "e", "shift"].includes(key)) {
     autoPilot = null;
   }
+}
+
+function stopFlight() {
+  autoPilot = null;
+  velocity.set(0, 0, 0);
 }
 
 function resetFlight() {
@@ -563,6 +673,7 @@ function animate() {
   const elapsed = clock.elapsedTime;
 
   updateSystem(elapsed, delta);
+  updateEvents(elapsed, delta);
   updateFlight(delta, elapsed);
   updateHUD();
   renderer.render(scene, camera);
@@ -628,7 +739,9 @@ function updateSystem(elapsed, delta) {
   bodyMap.forEach((body) => {
     body.pivot.rotation.y += body.speed * delta * 0.12;
     body.mesh.rotation.y += delta * (body.name === "Sun" ? 0.08 : 0.28);
-    if (body.moonPivot) body.moonPivot.rotation.y += delta * 1.15;
+    body.moonPivots?.forEach((moonPivot) => {
+      moonPivot.rotation.y += delta * moonPivot.userData.orbitSpeed;
+    });
   });
 
   const dust = ship.getObjectByName("localDust");
@@ -636,6 +749,150 @@ function updateSystem(elapsed, delta) {
     dust.rotation.y = Math.sin(elapsed * 0.25) * 0.04;
     dust.material.opacity = THREE.MathUtils.clamp(0.18 + velocity.length() * 0.032, 0.18, 0.8);
   }
+}
+
+function updateEvents(elapsed, delta) {
+  if (!eventsEnabled) return;
+
+  if (!activeEvent && elapsed >= nextEventAt) {
+    if (Math.random() > 0.45) {
+      spawnAsteroidField(elapsed);
+    } else {
+      spawnBlackHole(elapsed);
+    }
+  }
+
+  if (!activeEvent) return;
+
+  if (activeEvent.type === "asteroids") {
+    activeEvent.objects.forEach((asteroid) => {
+      asteroid.position.addScaledVector(asteroid.userData.velocity, delta);
+      asteroid.rotation.x += delta * asteroid.userData.spin.x;
+      asteroid.rotation.y += delta * asteroid.userData.spin.y;
+    });
+  }
+
+  if (activeEvent.type === "blackHole") {
+    activeEvent.ring.rotation.z += delta * 0.55;
+    activeEvent.ring.rotation.x += delta * 0.08;
+    const pull = new THREE.Vector3().subVectors(activeEvent.core.getWorldPosition(new THREE.Vector3()), ship.position);
+    const distance = pull.length();
+    if (distance < 220) {
+      velocity.addScaledVector(pull.normalize(), delta * THREE.MathUtils.clamp((220 - distance) * 0.018, 0, 2.1));
+    }
+  }
+
+  if (elapsed > activeEvent.expiresAt) {
+    clearActiveEvent();
+    scheduleNextEvent(elapsed);
+    setEventCard("이벤트 대기", "정상 항행", "다음 우주 현상을 스캔하고 있습니다.");
+  }
+}
+
+function spawnAsteroidField(elapsed) {
+  clearActiveEvent();
+  const group = new THREE.Group();
+  const eventPosition = getForwardEventPosition(180, 80);
+  group.position.copy(eventPosition);
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x9b8d80,
+    roughness: 0.95,
+    metalness: 0.04,
+    emissive: 0x4a3e36,
+    emissiveIntensity: 0.18,
+  });
+  const objects = [];
+  const drift = forward.clone().multiplyScalar(-18).add(right.clone().multiplyScalar(10 - Math.random() * 20));
+
+  for (let i = 0; i < 54; i += 1) {
+    const radius = 0.55 + Math.random() * 2.5;
+    const asteroid = new THREE.Mesh(new THREE.DodecahedronGeometry(radius, 0), material);
+    asteroid.position.set((Math.random() - 0.5) * 150, (Math.random() - 0.5) * 85, (Math.random() - 0.5) * 95);
+    asteroid.scale.setScalar(0.7 + Math.random() * 1.4);
+    asteroid.userData.velocity = drift
+      .clone()
+      .add(new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 12));
+    asteroid.userData.spin = new THREE.Vector3(0.3 + Math.random() * 1.8, 0.3 + Math.random() * 1.8, 0);
+    group.add(asteroid);
+    objects.push(asteroid);
+  }
+
+  eventGroup.add(group);
+  activeEvent = { type: "asteroids", group, objects, expiresAt: elapsed + 18 };
+  setEventCard("랜덤 이벤트", "소행성군 접근", "작은 소행성들이 항로를 가로지릅니다. 속도를 낮추거나 방향을 살짝 틀어 통과하세요.");
+}
+
+function spawnBlackHole(elapsed) {
+  clearActiveEvent();
+  const group = new THREE.Group();
+  group.position.copy(getForwardEventPosition(230, 120));
+
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(10, 48, 32),
+    new THREE.MeshBasicMaterial({ color: 0x000000 }),
+  );
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(18, 2.2, 18, 120),
+    new THREE.MeshBasicMaterial({
+      color: 0xffc36b,
+      transparent: true,
+      opacity: 0.86,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  ring.rotation.x = Math.PI / 2.7;
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(27, 48, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0x826dff,
+      transparent: true,
+      opacity: 0.12,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  const light = new THREE.PointLight(0xffbb77, 1.8, 210, 1.2);
+
+  group.add(halo, ring, core, light);
+  eventGroup.add(group);
+  activeEvent = { type: "blackHole", group, core, ring, expiresAt: elapsed + 22 };
+  setEventCard("랜덤 이벤트", "미니 블랙홀 조우", "주변 공간이 휘어집니다. 가까워지면 약한 중력 끌림이 생기니 정지나 워프로 벗어나세요.");
+}
+
+function getForwardEventPosition(distance, spread) {
+  ship.getWorldDirection(forward);
+  right.set(1, 0, 0).applyQuaternion(ship.quaternion).normalize();
+  up.set(0, 1, 0).applyQuaternion(ship.quaternion).normalize();
+  return ship.position
+    .clone()
+    .addScaledVector(forward, distance)
+    .addScaledVector(right, (Math.random() - 0.5) * spread)
+    .addScaledVector(up, (Math.random() - 0.5) * spread * 0.5);
+}
+
+function clearActiveEvent() {
+  if (!activeEvent) return;
+  eventGroup.remove(activeEvent.group);
+  activeEvent.group.traverse((object) => {
+    object.geometry?.dispose?.();
+    if (Array.isArray(object.material)) {
+      object.material.forEach((material) => material.dispose?.());
+    } else {
+      object.material?.dispose?.();
+    }
+  });
+  activeEvent = null;
+}
+
+function scheduleNextEvent(elapsed, minimumDelay = 10) {
+  nextEventAt = elapsed + minimumDelay + Math.random() * 16;
+}
+
+function setEventCard(type, name, info) {
+  eventType.textContent = type;
+  eventName.textContent = name;
+  eventInfo.textContent = info;
 }
 
 function updateFlight(delta, elapsed) {
@@ -647,20 +904,22 @@ function updateFlight(delta, elapsed) {
   if (autoPilot) {
     runAutopilot(delta);
   } else {
-    const acceleration = 12 + throttle * 78;
-    const boost = move.boost ? 3.4 : 1;
+    const cruiseSpeed = 28 + throttle * 150;
+    const boost = move.boost ? 1.85 : 1;
     const desired = new THREE.Vector3();
     desired.addScaledVector(forward, move.forward - move.back);
     desired.addScaledVector(right, move.right - move.left);
     desired.addScaledVector(up, move.up - move.down);
     if (desired.lengthSq() > 0) {
-      desired.normalize().multiplyScalar(acceleration * boost * delta);
-      velocity.add(desired);
+      desired.normalize().multiplyScalar(cruiseSpeed * boost);
+      velocity.lerp(desired, THREE.MathUtils.clamp(delta * 4.8, 0, 1));
+    } else {
+      velocity.multiplyScalar(Math.pow(0.1, delta));
     }
   }
 
-  velocity.multiplyScalar(Math.pow(0.84, delta));
-  const maxSpeed = autoPilot ? 260 : 120 + throttle * 260;
+  velocity.multiplyScalar(Math.pow(autoPilot ? 0.84 : 0.72, delta));
+  const maxSpeed = autoPilot ? 260 : 70 + throttle * 180;
   if (velocity.length() > maxSpeed) velocity.setLength(maxSpeed);
   ship.position.addScaledVector(velocity, delta);
 }
