@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/GLTFLoader.js";
 
 const canvas = document.getElementById("ocean");
 const sonarCanvas = document.getElementById("sonar");
@@ -61,6 +62,14 @@ const mobileMove = { forward: 0, back: 0, left: 0, right: 0 };
 const seaFloorBase = -360;
 const minDiveY = -560;
 const maxDiveY = 42;
+const modelBase = "./assets/models/";
+const marineModelAssets = {
+  fish: { file: "fish.glb", scale: 2.8, rotation: [0, Math.PI / 2, 0] },
+  shark: { file: "shark.glb", scale: 8.8, rotation: [0, Math.PI / 2, 0] },
+  whale: { file: "whale.glb", scale: 14.5, rotation: [0, Math.PI / 2, 0] },
+};
+const marineModelCache = new Map();
+const gltfLoader = new GLTFLoader();
 
 let selectedTarget = "coralGate";
 let autoPilot = null;
@@ -155,6 +164,7 @@ setupSeascape();
 setupTargets();
 setupPlankton();
 setupMarineLife();
+loadMarineLifeModels();
 setupUI();
 resetDive();
 animate();
@@ -189,18 +199,37 @@ function setupSeascape() {
 
 function makePaintedBackdrop() {
   const group = new THREE.Group();
-  const horizon = new THREE.Mesh(
-    new THREE.PlaneGeometry(2200, 760),
-    new THREE.MeshBasicMaterial({
-      color: 0xa6eff4,
-      transparent: true,
-      opacity: 0.34,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  horizon.position.set(0, 110, -760);
-  group.add(horizon);
+  const bands = [
+    { color: 0xbdf6ff, opacity: 0.52, y: 265, height: 280 },
+    { color: 0x7fe6df, opacity: 0.46, y: 40, height: 240 },
+    { color: 0x51b8d0, opacity: 0.34, y: -230, height: 340 },
+  ];
+
+  bands.forEach((band) => {
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(2300, band.height),
+      new THREE.MeshBasicMaterial({
+        color: band.color,
+        transparent: true,
+        opacity: band.opacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    panel.position.set(0, band.y, -780);
+    group.add(panel);
+  });
+
+  const horizonLine = makeTubeWave({
+    width: 1600,
+    amplitude: 12,
+    segments: 34,
+    radius: 1.2,
+    color: 0xf7fff7,
+    opacity: 0.36,
+  });
+  horizonLine.position.set(0, 128, -748);
+  group.add(horizonLine);
 
   const cloudMaterial = new THREE.MeshBasicMaterial({
     color: 0xfff6dc,
@@ -288,6 +317,32 @@ function makeLightShafts() {
 function makeCartoonWaterDetails() {
   cartoonWaterGroup.clear();
 
+  const bigWaveSpecs = [
+    { width: 1050, amplitude: 20, radius: 2.2, y: 42, z: -470, opacity: 0.58, speed: 0.22, drift: 12 },
+    { width: 880, amplitude: 16, radius: 1.8, y: 25, z: -280, opacity: 0.44, speed: 0.28, drift: -9 },
+    { width: 720, amplitude: 13, radius: 1.45, y: 8, z: -90, opacity: 0.34, speed: 0.34, drift: 7 },
+    { width: 960, amplitude: 18, radius: 1.65, y: 38, z: 180, opacity: 0.38, speed: 0.24, drift: -11 },
+  ];
+  bigWaveSpecs.forEach((spec, index) => {
+    const wave = makeTubeWave({
+      width: spec.width,
+      amplitude: spec.amplitude,
+      segments: 42,
+      radius: spec.radius,
+      color: 0xfafff8,
+      opacity: spec.opacity,
+    });
+    wave.position.set((index % 2 === 0 ? -1 : 1) * 40, spec.y, spec.z);
+    wave.userData.bigWave = {
+      baseX: wave.position.x,
+      baseY: spec.y,
+      phase: index * 1.7,
+      speed: spec.speed,
+      drift: spec.drift,
+    };
+    cartoonWaterGroup.add(wave);
+  });
+
   const waveMaterial = new THREE.LineBasicMaterial({
     color: 0xf3fffb,
     transparent: true,
@@ -351,6 +406,30 @@ function makeCartoonWaterDetails() {
   }
 
   return cartoonWaterGroup;
+}
+
+function makeTubeWave({ width, amplitude, segments, radius, color, opacity }) {
+  const points = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const t = i / segments;
+    points.push(
+      new THREE.Vector3(
+        (t - 0.5) * width,
+        Math.sin(t * Math.PI * 2) * amplitude * 0.52 + Math.sin(t * Math.PI * 4) * amplitude * 0.22,
+        Math.cos(t * Math.PI * 2) * amplitude * 0.12,
+      ),
+    );
+  }
+  const curve = new THREE.CatmullRomCurve3(points);
+  return new THREE.Mesh(
+    new THREE.TubeGeometry(curve, segments * 2, radius, 8, false),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+    }),
+  );
 }
 
 function makeSparkleMaterial() {
@@ -451,6 +530,7 @@ function setupTargets() {
     if (target.id === "ventSpire") makeVentSpire(group);
     if (target.id === "glassTrench") makeGlassTrench(group);
     if (target.id === "abyssArch") makeAbyssArch(group);
+    addCartoonOutline(group, 1.045, 0x2a7592, 24);
 
     const beacon = makeBeacon(target.color);
     beacon.position.y = 15;
@@ -649,6 +729,7 @@ function setupPlankton() {
 function setupMarineLife() {
   for (let i = 0; i < 42; i += 1) {
     const fish = makeFish(0.8 + Math.random() * 1.7, i % 5 === 0 ? 0xff9c78 : 0x77d7c8);
+    fish.userData.modelKind = "fish";
     placeSwimmer(fish, {
       radius: 120 + Math.random() * 560,
       y: -70 - Math.random() * 310,
@@ -661,6 +742,7 @@ function setupMarineLife() {
 
   for (let i = 0; i < 5; i += 1) {
     const shark = makeShark(5.5 + Math.random() * 2.8);
+    shark.userData.modelKind = "shark";
     placeSwimmer(shark, {
       radius: 240 + Math.random() * 520,
       y: -150 - Math.random() * 260,
@@ -674,6 +756,7 @@ function setupMarineLife() {
 
   for (let i = 0; i < 2; i += 1) {
     const whale = makeOceanWhale(13 + Math.random() * 5);
+    whale.userData.modelKind = "whale";
     placeSwimmer(whale, {
       radius: 390 + Math.random() * 380,
       y: -230 - Math.random() * 230,
@@ -685,6 +768,59 @@ function setupMarineLife() {
     marineLifeGroup.add(whale);
   }
   document.documentElement.dataset.oceanLife = String(marineLifeGroup.children.length);
+}
+
+function loadMarineLifeModels() {
+  Object.entries(marineModelAssets).forEach(([kind, asset]) => {
+    gltfLoader.load(
+      `${modelBase}${asset.file}`,
+      (gltf) => {
+        const template = normalizeMarineModel(gltf.scene, asset);
+        marineModelCache.set(kind, template);
+        replaceMarineFallbacks(kind, template);
+        document.documentElement.dataset.oceanModelsLoaded = String(marineModelCache.size);
+      },
+      undefined,
+      () => {
+        document.documentElement.dataset.oceanModelFallback = "1";
+      },
+    );
+  });
+}
+
+function normalizeMarineModel(sceneObject, asset) {
+  const model = sceneObject.clone(true);
+  model.scale.setScalar(asset.scale);
+  model.rotation.set(...asset.rotation);
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = false;
+    child.receiveShadow = false;
+    if (child.material) {
+      child.material = child.material.clone();
+      child.material.roughness = Math.min(child.material.roughness ?? 0.8, 0.82);
+      child.material.metalness = 0;
+    }
+  });
+  addCartoonOutline(model, 1.035, 0x287c91, 36);
+  return model;
+}
+
+function replaceMarineFallbacks(kind, template) {
+  marineLifeGroup.children.forEach((creature) => {
+    if (creature.userData.modelKind !== kind || creature.userData.externalModelApplied) return;
+    const keep = {
+      swim: creature.userData.swim,
+      modelKind: creature.userData.modelKind,
+    };
+    creature.clear();
+    creature.add(template.clone(true));
+    creature.userData.swim = keep.swim;
+    creature.userData.modelKind = keep.modelKind;
+    creature.userData.externalModelApplied = true;
+    creature.userData.tail = null;
+    creature.userData.flukes = null;
+  });
 }
 
 function placeSwimmer(group, data) {
@@ -724,6 +860,7 @@ function makeFish(size, color) {
   dorsal.rotation.x = Math.PI;
   group.add(body, tail, dorsal);
   group.userData.tail = tail;
+  addCartoonOutline(group, 1.08, 0x267890, 1);
   return group;
 }
 
@@ -749,6 +886,7 @@ function makeShark(size) {
   fin.rotation.x = Math.PI;
   group.add(body, nose, tail, fin);
   group.userData.tail = tail;
+  addCartoonOutline(group, 1.045, 0x276f84, 3);
   return group;
 }
 
@@ -784,7 +922,31 @@ function makeOceanWhale(size) {
   group.add(body, head, tailStem, flukeA, flukeB, finA, finB);
   group.userData.tail = tailStem;
   group.userData.flukes = [flukeA, flukeB];
+  addCartoonOutline(group, 1.032, 0x2a647e, 4);
   return group;
+}
+
+function addCartoonOutline(root, scale = 1.04, color = 0x226c86, maxMeshes = 48) {
+  const outlineMaterial = new THREE.MeshBasicMaterial({
+    color,
+    side: THREE.BackSide,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+  });
+  const meshes = [];
+  root.traverse((child) => {
+    if (child.isMesh && !child.userData.outline) meshes.push(child);
+  });
+  meshes.slice(0, maxMeshes).forEach((mesh) => {
+    const outline = new THREE.Mesh(mesh.geometry, outlineMaterial.clone());
+    outline.userData.outline = true;
+    outline.position.set(0, 0, 0);
+    outline.rotation.set(0, 0, 0);
+    outline.scale.setScalar(scale);
+    outline.renderOrder = -1;
+    mesh.add(outline);
+  });
 }
 
 function makeBeacon(color) {
@@ -1024,6 +1186,13 @@ function updateTargets(elapsed) {
 function updateCartoonWater(elapsed, delta) {
   const scaledDelta = delta * motionScale;
   cartoonWaterGroup.children.forEach((object) => {
+    if (object.userData.bigWave) {
+      const wave = object.userData.bigWave;
+      object.position.x = wave.baseX + Math.sin(elapsed * wave.speed + wave.phase) * wave.drift;
+      object.position.y = wave.baseY + Math.sin(elapsed * wave.speed * 0.8 + wave.phase) * 2.2;
+      object.material.opacity = THREE.MathUtils.clamp(object.material.opacity + Math.sin(elapsed * 0.5 + wave.phase) * 0.0008, 0.28, 0.64);
+    }
+
     if (object.userData.wave) {
       const wave = object.userData.wave;
       object.position.x = Math.sin(elapsed * wave.speed + wave.phase) * wave.drift;
