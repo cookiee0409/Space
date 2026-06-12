@@ -29,8 +29,8 @@ const eventInfo = document.getElementById("eventInfo");
 
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x031217);
-scene.fog = new THREE.FogExp2(0x03202a, 0.0032);
+scene.background = new THREE.Color(0x91e5f0);
+scene.fog = new THREE.FogExp2(0x83dbe8, 0.00215);
 
 const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 4200);
 camera.position.set(0, 0, 0);
@@ -44,7 +44,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.25;
+renderer.toneMappingExposure = 1.52;
 
 const sub = new THREE.Object3D();
 sub.position.set(-170, -28, 150);
@@ -140,11 +140,15 @@ const labelSprites = [];
 const beaconObjects = [];
 const eventGroup = new THREE.Group();
 const marineLifeGroup = new THREE.Group();
+const cartoonWaterGroup = new THREE.Group();
 scene.add(eventGroup);
 scene.add(marineLifeGroup);
+scene.add(cartoonWaterGroup);
 
 let plankton;
 let sonarSweep = 0;
+const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+const motionScale = reducedMotion ? 0.35 : 1;
 
 setupLights();
 setupSeascape();
@@ -156,29 +160,62 @@ resetDive();
 animate();
 
 function setupLights() {
-  scene.add(new THREE.AmbientLight(0x7db9b4, 0.45));
-  scene.add(new THREE.HemisphereLight(0x8be6dc, 0x061012, 1.08));
+  scene.add(new THREE.AmbientLight(0xd9fff5, 0.68));
+  scene.add(new THREE.HemisphereLight(0xeafff9, 0x5db9b5, 1.24));
 
-  const surfaceLight = new THREE.DirectionalLight(0xd9fff5, 2.2);
+  const surfaceLight = new THREE.DirectionalLight(0xfff1bf, 2.65);
   surfaceLight.position.set(-130, 180, 80);
   scene.add(surfaceLight);
 
-  const subLight = new THREE.SpotLight(0xd9fff2, 5.4, 330, Math.PI / 7.2, 0.72, 1.2);
+  const subLight = new THREE.SpotLight(0xf4fff2, 3.4, 300, Math.PI / 7.5, 0.82, 1.2);
   subLight.position.set(0, -1.2, 0);
   subLight.target.position.set(0, -4, -120);
   sub.add(subLight, subLight.target);
 
-  const rimLight = new THREE.PointLight(0xff9c78, 0.85, 280, 1.4);
+  const rimLight = new THREE.PointLight(0xffcf9d, 1.1, 300, 1.4);
   rimLight.position.set(120, -30, 80);
   scene.add(rimLight);
 }
 
 function setupSeascape() {
+  scene.add(makePaintedBackdrop());
   scene.add(makeSeafloor());
   scene.add(makeWaterSurface());
   scene.add(makeLightShafts());
+  scene.add(makeCartoonWaterDetails());
   scene.add(makeDistantHaze());
   scene.add(makeTerrainRocks());
+}
+
+function makePaintedBackdrop() {
+  const group = new THREE.Group();
+  const horizon = new THREE.Mesh(
+    new THREE.PlaneGeometry(2200, 760),
+    new THREE.MeshBasicMaterial({
+      color: 0xa6eff4,
+      transparent: true,
+      opacity: 0.34,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  horizon.position.set(0, 110, -760);
+  group.add(horizon);
+
+  const cloudMaterial = new THREE.MeshBasicMaterial({
+    color: 0xfff6dc,
+    transparent: true,
+    opacity: 0.2,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  for (let i = 0; i < 7; i += 1) {
+    const cloud = new THREE.Mesh(new THREE.CircleGeometry(44 + Math.random() * 60, 24), cloudMaterial.clone());
+    cloud.position.set(-620 + i * 210 + Math.random() * 60, 170 + Math.random() * 90, -735 - Math.random() * 45);
+    cloud.scale.set(1.7 + Math.random() * 0.8, 0.48 + Math.random() * 0.25, 1);
+    group.add(cloud);
+  }
+  return group;
 }
 
 function makeSeafloor() {
@@ -201,11 +238,11 @@ function makeSeafloor() {
   return new THREE.Mesh(
     geometry,
     new THREE.MeshStandardMaterial({
-      color: 0x25423b,
-      roughness: 0.95,
+      color: 0x78cdb9,
+      roughness: 0.88,
       metalness: 0.02,
-      emissive: 0x031513,
-      emissiveIntensity: 0.28,
+      emissive: 0x1b797d,
+      emissiveIntensity: 0.18,
     }),
   );
 }
@@ -214,9 +251,9 @@ function makeWaterSurface() {
   const surface = new THREE.Mesh(
     new THREE.PlaneGeometry(1600, 1600, 1, 1),
     new THREE.MeshBasicMaterial({
-      color: 0x66e0d1,
+      color: 0xc7fff2,
       transparent: true,
-      opacity: 0.08,
+      opacity: 0.24,
       side: THREE.DoubleSide,
       depthWrite: false,
     }),
@@ -229,9 +266,9 @@ function makeWaterSurface() {
 function makeLightShafts() {
   const group = new THREE.Group();
   const material = new THREE.MeshBasicMaterial({
-    color: 0xa8fff1,
+    color: 0xfff6cf,
     transparent: true,
-    opacity: 0.045,
+    opacity: 0.062,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -248,12 +285,107 @@ function makeLightShafts() {
   return group;
 }
 
+function makeCartoonWaterDetails() {
+  cartoonWaterGroup.clear();
+
+  const waveMaterial = new THREE.LineBasicMaterial({
+    color: 0xf3fffb,
+    transparent: true,
+    opacity: 0.46,
+  });
+  for (let i = 0; i < 14; i += 1) {
+    const points = [];
+    const width = 70 + Math.random() * 120;
+    const baseX = (Math.random() - 0.5) * 950;
+    const baseZ = -460 + Math.random() * 920;
+    const baseY = 18 + Math.random() * 28;
+    for (let j = 0; j < 18; j += 1) {
+      const t = j / 17;
+      points.push(
+        new THREE.Vector3(
+          baseX + (t - 0.5) * width,
+          baseY + Math.sin(t * Math.PI * 2) * (1.2 + Math.random() * 0.5),
+          baseZ + Math.sin(t * Math.PI) * (6 + Math.random() * 4),
+        ),
+      );
+    }
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), waveMaterial.clone());
+    line.userData.wave = {
+      baseY,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.35 + Math.random() * 0.45,
+      drift: 3 + Math.random() * 7,
+    };
+    cartoonWaterGroup.add(line);
+  }
+
+  const sparkleMaterial = makeSparkleMaterial();
+  for (let i = 0; i < 28; i += 1) {
+    const sparkle = new THREE.Sprite(sparkleMaterial.clone());
+    sparkle.position.set((Math.random() - 0.5) * 1050, 14 + Math.random() * 38, (Math.random() - 0.5) * 980);
+    sparkle.scale.setScalar(2.5 + Math.random() * 5);
+    sparkle.material.opacity = 0.26 + Math.random() * 0.38;
+    sparkle.userData.sparkle = {
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.8 + Math.random() * 1.1,
+    };
+    cartoonWaterGroup.add(sparkle);
+  }
+
+  const foamMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.34,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  for (let i = 0; i < 14; i += 1) {
+    const foam = new THREE.Mesh(new THREE.RingGeometry(2 + Math.random() * 2, 2.3 + Math.random() * 3.5, 18), foamMaterial.clone());
+    foam.position.set((Math.random() - 0.5) * 980, -8 + Math.random() * 34, (Math.random() - 0.5) * 940);
+    foam.rotation.x = -Math.PI / 2;
+    foam.userData.foam = {
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.18 + Math.random() * 0.28,
+    };
+    cartoonWaterGroup.add(foam);
+  }
+
+  return cartoonWaterGroup;
+}
+
+function makeSparkleMaterial() {
+  const sparkleCanvas = document.createElement("canvas");
+  sparkleCanvas.width = 48;
+  sparkleCanvas.height = 48;
+  const context = sparkleCanvas.getContext("2d");
+  context.clearRect(0, 0, 48, 48);
+  context.strokeStyle = "rgba(255, 255, 255, 0.92)";
+  context.lineWidth = 3;
+  context.lineCap = "round";
+  context.beginPath();
+  context.moveTo(24, 8);
+  context.quadraticCurveTo(25, 22, 40, 24);
+  context.quadraticCurveTo(25, 26, 24, 40);
+  context.quadraticCurveTo(23, 26, 8, 24);
+  context.quadraticCurveTo(23, 22, 24, 8);
+  context.stroke();
+  const texture = new THREE.CanvasTexture(sparkleCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
 function makeDistantHaze() {
   const geometry = new THREE.BufferGeometry();
   const count = 460;
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
-  const palette = ["#5ff2d0", "#ff9c78", "#8fcf7d", "#73d7ff"];
+  const palette = ["#c9fff0", "#ffd6ba", "#baf0d5", "#bfeeff", "#fff3bc"];
 
   for (let i = 0; i < count; i += 1) {
     const index = i * 3;
@@ -277,7 +409,7 @@ function makeDistantHaze() {
       size: 5.8,
       vertexColors: true,
       transparent: true,
-      opacity: 0.14,
+      opacity: 0.18,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     }),
@@ -287,11 +419,11 @@ function makeDistantHaze() {
 function makeTerrainRocks() {
   const group = new THREE.Group();
   const material = new THREE.MeshStandardMaterial({
-    color: 0x34463f,
-    roughness: 0.96,
+    color: 0x8bc7b8,
+    roughness: 0.9,
     metalness: 0.01,
-    emissive: 0x071615,
-    emissiveIntensity: 0.18,
+    emissive: 0x2c8d92,
+    emissiveIntensity: 0.16,
   });
 
   for (let i = 0; i < 90; i += 1) {
@@ -855,6 +987,7 @@ function animate() {
   const elapsed = clock.elapsedTime;
 
   updateTargets(elapsed);
+  updateCartoonWater(elapsed, delta);
   updateMarineLife(elapsed, delta);
   updateEvents(elapsed, delta);
   updateDive(delta, elapsed);
@@ -888,16 +1021,44 @@ function updateTargets(elapsed) {
   }
 }
 
+function updateCartoonWater(elapsed, delta) {
+  const scaledDelta = delta * motionScale;
+  cartoonWaterGroup.children.forEach((object) => {
+    if (object.userData.wave) {
+      const wave = object.userData.wave;
+      object.position.x = Math.sin(elapsed * wave.speed + wave.phase) * wave.drift;
+      object.position.y = Math.sin(elapsed * wave.speed * 0.7 + wave.phase) * 1.6;
+      object.material.opacity = 0.34 + Math.sin(elapsed * 0.85 + wave.phase) * 0.08;
+    }
+
+    if (object.userData.sparkle) {
+      const sparkle = object.userData.sparkle;
+      const pulse = 0.65 + Math.sin(elapsed * sparkle.speed + sparkle.phase) * 0.35;
+      object.material.opacity = 0.18 + pulse * 0.42;
+      object.scale.setScalar((2.5 + pulse * 4.5) * (reducedMotion ? 0.82 : 1));
+      object.position.x += Math.sin(elapsed * 0.2 + sparkle.phase) * scaledDelta * 1.8;
+    }
+
+    if (object.userData.foam) {
+      const foam = object.userData.foam;
+      object.rotation.z += scaledDelta * foam.speed;
+      object.position.y += Math.sin(elapsed * 0.55 + foam.phase) * scaledDelta * 0.9;
+      object.material.opacity = 0.22 + Math.sin(elapsed * 0.72 + foam.phase) * 0.08;
+    }
+  });
+}
+
 function updateMarineLife(elapsed, delta) {
+  const lifeElapsed = elapsed * motionScale;
   marineLifeGroup.children.forEach((creature) => {
     const swim = creature.userData.swim;
     if (!swim) return;
 
-    const angle = swim.phase + elapsed * swim.speed;
-    const wobble = Math.sin(elapsed * (swim.predator ? 0.9 : 1.6) + swim.phase);
+    const angle = swim.phase + lifeElapsed * swim.speed;
+    const wobble = Math.sin(lifeElapsed * (swim.predator ? 0.9 : 1.6) + swim.phase);
     creature.position.set(
       swim.center.x + Math.cos(angle) * swim.radius,
-      swim.center.y + Math.sin(elapsed * 0.45 + swim.phase) * swim.bob,
+      swim.center.y + Math.sin(lifeElapsed * 0.45 + swim.phase) * swim.bob,
       swim.center.z + Math.sin(angle) * swim.radius * (swim.whale ? 0.42 : 0.68),
     );
     const nextAngle = angle + 0.02;
@@ -911,10 +1072,10 @@ function updateMarineLife(elapsed, delta) {
     creature.rotation.z = wobble * (swim.whale ? 0.025 : 0.06);
 
     if (creature.userData.tail) {
-      creature.userData.tail.rotation.y = Math.sin(elapsed * (swim.whale ? 1.6 : 5.8) + swim.phase) * (swim.whale ? 0.08 : 0.22);
+      creature.userData.tail.rotation.y = Math.sin(lifeElapsed * (swim.whale ? 1.6 : 5.8) + swim.phase) * (swim.whale ? 0.08 : 0.22);
     }
     creature.userData.flukes?.forEach((fluke, index) => {
-      fluke.rotation.y = Math.sin(elapsed * 1.45 + swim.phase + index) * 0.08;
+      fluke.rotation.y = Math.sin(lifeElapsed * 1.45 + swim.phase + index) * 0.08;
     });
   });
 }
