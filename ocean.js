@@ -27,11 +27,18 @@ const targetInfo = document.getElementById("targetInfo");
 const eventType = document.getElementById("eventType");
 const eventName = document.getElementById("eventName");
 const eventInfo = document.getElementById("eventInfo");
+const gameButton = document.getElementById("gameButton");
+const gameScoreReadout = document.getElementById("gameScore");
+const gameTimeReadout = document.getElementById("gameTime");
+const gamePearlsReadout = document.getElementById("gamePearls");
+const gameBestReadout = document.getElementById("gameBest");
+const gameMessage = document.getElementById("gameMessage");
+const stingFlash = document.getElementById("stingFlash");
 
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x91e5f0);
-scene.fog = new THREE.FogExp2(0x83dbe8, 0.00215);
+scene.background = new THREE.Color(0x6fd6f5);
+scene.fog = new THREE.FogExp2(0x70d2ef, 0.0019);
 
 const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 4200);
 camera.position.set(0, 0, 0);
@@ -159,6 +166,48 @@ let sonarSweep = 0;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 const motionScale = reducedMotion ? 0.35 : 1;
 
+const toonGradient = makeToonGradient(4);
+
+function makeToonGradient(steps) {
+  const gradientCanvas = document.createElement("canvas");
+  gradientCanvas.width = steps;
+  gradientCanvas.height = 1;
+  const context = gradientCanvas.getContext("2d");
+  for (let i = 0; i < steps; i += 1) {
+    const value = Math.round(96 + (159 * i) / (steps - 1));
+    context.fillStyle = `rgb(${value}, ${value}, ${value})`;
+    context.fillRect(i, 0, 1, 1);
+  }
+  const texture = new THREE.CanvasTexture(gradientCanvas);
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+function toonMat({ color, emissive = 0x000000, emissiveIntensity = 0 }) {
+  return new THREE.MeshToonMaterial({
+    color,
+    gradientMap: toonGradient,
+    emissive,
+    emissiveIntensity,
+  });
+}
+
+const gameGroup = new THREE.Group();
+scene.add(gameGroup);
+const game = {
+  state: "idle",
+  score: 0,
+  best: Number(localStorage.getItem("pearlRushBest") ?? 0) || 0,
+  timeLeft: 0,
+  combo: 0,
+  lastCollectAt: -99,
+  stingCooldown: 0,
+  pearls: [],
+  jellies: [],
+};
+
 setupLights();
 setupSeascape();
 setupTargets();
@@ -166,6 +215,7 @@ setupPlankton();
 setupMarineLife();
 loadMarineLifeModels();
 setupUI();
+setupGameUI();
 resetDive();
 animate();
 
@@ -266,13 +316,7 @@ function makeSeafloor() {
 
   return new THREE.Mesh(
     geometry,
-    new THREE.MeshStandardMaterial({
-      color: 0x78cdb9,
-      roughness: 0.88,
-      metalness: 0.02,
-      emissive: 0x1b797d,
-      emissiveIntensity: 0.18,
-    }),
+    toonMat({ color: 0xf2dc96, emissive: 0x8c6f33, emissiveIntensity: 0.16 }),
   );
 }
 
@@ -497,13 +541,7 @@ function makeDistantHaze() {
 
 function makeTerrainRocks() {
   const group = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x8bc7b8,
-    roughness: 0.9,
-    metalness: 0.01,
-    emissive: 0x2c8d92,
-    emissiveIntensity: 0.16,
-  });
+  const material = toonMat({ color: 0x86b7d6, emissive: 0x2c5d80, emissiveIntensity: 0.14 });
 
   for (let i = 0; i < 90; i += 1) {
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(2 + Math.random() * 8, 0), material);
@@ -547,13 +585,8 @@ function setupTargets() {
 }
 
 function makeCoralGate(group) {
-  const coralMaterial = new THREE.MeshStandardMaterial({
-    color: 0xff8f75,
-    roughness: 0.78,
-    emissive: 0x5b211d,
-    emissiveIntensity: 0.38,
-  });
-  const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x46534b, roughness: 0.92 });
+  const coralMaterial = toonMat({ color: 0xff8a70, emissive: 0x7c2c20, emissiveIntensity: 0.3 });
+  const rockMaterial = toonMat({ color: 0x7a93a3, emissive: 0x2a3c46, emissiveIntensity: 0.12 });
   const left = new THREE.Mesh(new THREE.CylinderGeometry(7, 12, 42, 8), rockMaterial);
   const rightRock = left.clone();
   left.position.set(-18, 2, 0);
@@ -572,12 +605,7 @@ function makeCoralGate(group) {
 }
 
 function makeKelpCathedral(group) {
-  const stalkMaterial = new THREE.MeshStandardMaterial({
-    color: 0x5f9f64,
-    roughness: 0.72,
-    emissive: 0x123719,
-    emissiveIntensity: 0.45,
-  });
+  const stalkMaterial = toonMat({ color: 0x59b964, emissive: 0x17471f, emissiveIntensity: 0.35 });
   const leafMaterial = new THREE.MeshBasicMaterial({
     color: 0x9ad681,
     transparent: true,
@@ -604,13 +632,7 @@ function makeKelpCathedral(group) {
 }
 
 function makeShipwreck(group) {
-  const hullMaterial = new THREE.MeshStandardMaterial({
-    color: 0x8a5f3e,
-    roughness: 0.88,
-    metalness: 0.12,
-    emissive: 0x24130c,
-    emissiveIntensity: 0.2,
-  });
+  const hullMaterial = toonMat({ color: 0xa06a40, emissive: 0x33180c, emissiveIntensity: 0.2 });
   const hull = new THREE.Mesh(new THREE.BoxGeometry(58, 13, 20), hullMaterial);
   hull.position.y = -7;
   hull.rotation.set(0.04, -0.42, -0.16);
@@ -631,12 +653,7 @@ function makeShipwreck(group) {
 }
 
 function makeVentSpire(group) {
-  const rockMaterial = new THREE.MeshStandardMaterial({
-    color: 0x222c2b,
-    roughness: 0.94,
-    emissive: 0x130b07,
-    emissiveIntensity: 0.3,
-  });
+  const rockMaterial = toonMat({ color: 0x3c4a52, emissive: 0x17100a, emissiveIntensity: 0.3 });
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: 0xffd36b,
     transparent: true,
@@ -659,13 +676,7 @@ function makeVentSpire(group) {
 }
 
 function makeGlassTrench(group) {
-  const wallMaterial = new THREE.MeshStandardMaterial({
-    color: 0x163842,
-    roughness: 0.82,
-    metalness: 0.05,
-    emissive: 0x082a31,
-    emissiveIntensity: 0.42,
-  });
+  const wallMaterial = toonMat({ color: 0x2a5d73, emissive: 0x0b333d, emissiveIntensity: 0.4 });
   for (let i = 0; i < 18; i += 1) {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(10 + Math.random() * 16, 38 + Math.random() * 46, 12), wallMaterial);
     const side = i % 2 === 0 ? -1 : 1;
@@ -676,12 +687,7 @@ function makeGlassTrench(group) {
 }
 
 function makeAbyssArch(group) {
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x4b4b62,
-    roughness: 0.9,
-    emissive: 0x151323,
-    emissiveIntensity: 0.34,
-  });
+  const material = toonMat({ color: 0x6c6c92, emissive: 0x1c1933, emissiveIntensity: 0.3 });
   const arch = new THREE.Mesh(new THREE.TorusGeometry(30, 5, 18, 96), material);
   arch.rotation.y = Math.PI / 2;
   arch.position.y = 8;
@@ -797,9 +803,11 @@ function normalizeMarineModel(sceneObject, asset) {
     child.castShadow = false;
     child.receiveShadow = false;
     if (child.material) {
-      child.material = child.material.clone();
-      child.material.roughness = Math.min(child.material.roughness ?? 0.8, 0.82);
-      child.material.metalness = 0;
+      child.material = new THREE.MeshToonMaterial({
+        color: child.material.color?.clone() ?? new THREE.Color(0xffffff),
+        map: child.material.map ?? null,
+        gradientMap: toonGradient,
+      });
     }
   });
   addCartoonOutline(model, 1.035, 0x287c91, 36);
@@ -837,10 +845,8 @@ function placeSwimmer(group, data) {
 
 function makeFish(size, color) {
   const group = new THREE.Group();
-  const bodyMaterial = new THREE.MeshStandardMaterial({
+  const bodyMaterial = toonMat({
     color,
-    roughness: 0.58,
-    metalness: 0.03,
     emissive: new THREE.Color(color).multiplyScalar(0.14),
     emissiveIntensity: 0.25,
   });
@@ -866,13 +872,7 @@ function makeFish(size, color) {
 
 function makeShark(size) {
   const group = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x8fa6ad,
-    roughness: 0.64,
-    metalness: 0.02,
-    emissive: 0x101d22,
-    emissiveIntensity: 0.28,
-  });
+  const material = toonMat({ color: 0x9fb9c9, emissive: 0x16262e, emissiveIntensity: 0.26 });
   const body = new THREE.Mesh(new THREE.SphereGeometry(size, 24, 14), material);
   body.scale.set(2.45, 0.54, 0.62);
   const nose = new THREE.Mesh(new THREE.ConeGeometry(size * 0.48, size * 2.0, 18), material);
@@ -892,13 +892,7 @@ function makeShark(size) {
 
 function makeOceanWhale(size) {
   const group = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x526875,
-    roughness: 0.72,
-    metalness: 0.01,
-    emissive: 0x101923,
-    emissiveIntensity: 0.24,
-  });
+  const material = toonMat({ color: 0x6788a3, emissive: 0x14202e, emissiveIntensity: 0.22 });
   const body = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 18), material);
   body.scale.set(2.75, 0.72, 0.82);
   const head = new THREE.Mesh(new THREE.SphereGeometry(size * 0.98, 28, 16), material);
@@ -926,12 +920,12 @@ function makeOceanWhale(size) {
   return group;
 }
 
-function addCartoonOutline(root, scale = 1.04, color = 0x226c86, maxMeshes = 48) {
+function addCartoonOutline(root, scale = 1.04, color = 0x1d4f66, maxMeshes = 48) {
   const outlineMaterial = new THREE.MeshBasicMaterial({
     color,
     side: THREE.BackSide,
     transparent: true,
-    opacity: 0.72,
+    opacity: 0.95,
     depthWrite: false,
   });
   const meshes = [];
@@ -1153,6 +1147,7 @@ function animate() {
   updateMarineLife(elapsed, delta);
   updateEvents(elapsed, delta);
   updateDive(delta, elapsed);
+  updateGame(elapsed, delta);
   updateHUD();
   updateSonar(delta);
   renderer.render(scene, camera);
@@ -1523,6 +1518,27 @@ function updateSonar(delta) {
     sonarContext.fill();
   });
 
+  if (game.state === "playing") {
+    game.pearls.forEach((pearl) => {
+      const dx = pearl.position.x - sub.position.x;
+      const dz = pearl.position.z - sub.position.z;
+      if (Math.hypot(dx, dz) > range) return;
+      sonarContext.fillStyle = "#ffe27a";
+      sonarContext.beginPath();
+      sonarContext.arc(center + (dx / range) * (center - 12), center + (dz / range) * (center - 12), 3.2, 0, Math.PI * 2);
+      sonarContext.fill();
+    });
+    game.jellies.forEach((jelly) => {
+      const dx = jelly.position.x - sub.position.x;
+      const dz = jelly.position.z - sub.position.z;
+      if (Math.hypot(dx, dz) > range) return;
+      sonarContext.fillStyle = "rgba(255, 150, 220, 0.85)";
+      sonarContext.beginPath();
+      sonarContext.arc(center + (dx / range) * (center - 12), center + (dz / range) * (center - 12), 2.4, 0, Math.PI * 2);
+      sonarContext.fill();
+    });
+  }
+
   sonarContext.fillStyle = "#eefcff";
   sonarContext.beginPath();
   sonarContext.arc(center, center, 3.5, 0, Math.PI * 2);
@@ -1615,6 +1631,247 @@ function setEventCard(type, name, info) {
   eventType.textContent = type;
   eventName.textContent = name;
   eventInfo.textContent = info;
+}
+
+// ===== Pearl Rush 미니게임 =====
+const GAME_DURATION = 90;
+const PEARL_COUNT = 12;
+const JELLY_COUNT = 7;
+const PEARL_COLLECT_RANGE = 18;
+const JELLY_STING_RANGE = 14;
+
+function setupGameUI() {
+  gameBestReadout.textContent = `최고 ${game.best.toLocaleString("ko-KR")}점`;
+  gameButton.addEventListener("click", () => {
+    if (game.state === "playing") {
+      endGame("중단");
+    } else {
+      startGame();
+    }
+  });
+}
+
+function startGame() {
+  clearGameObjects();
+  game.state = "playing";
+  game.score = 0;
+  game.combo = 0;
+  game.lastCollectAt = -99;
+  game.timeLeft = GAME_DURATION;
+  game.stingCooldown = 0;
+
+  for (let i = 0; i < PEARL_COUNT; i += 1) {
+    const pearl = makePearl();
+    const x = (Math.random() - 0.5) * 760;
+    const z = (Math.random() - 0.5) * 760;
+    const floor = terrainHeight(x, z);
+    const y = floor + 24 + Math.random() * Math.max(30, -90 - floor - 24);
+    pearl.position.set(x, Math.min(y, -70), z);
+    pearl.userData.pearl = { phase: Math.random() * Math.PI * 2, popping: 0 };
+    gameGroup.add(pearl);
+    game.pearls.push(pearl);
+  }
+
+  for (let i = 0; i < JELLY_COUNT; i += 1) {
+    const jelly = makeJellyfish(3.4 + Math.random() * 2.4);
+    jelly.position.set((Math.random() - 0.5) * 640, -90 - Math.random() * 280, (Math.random() - 0.5) * 640);
+    jelly.userData.jelly = {
+      baseY: jelly.position.y,
+      phase: Math.random() * Math.PI * 2,
+      drift: 10 + Math.random() * 22,
+      speed: 0.4 + Math.random() * 0.5,
+    };
+    gameGroup.add(jelly);
+    game.jellies.push(jelly);
+  }
+
+  gameButton.textContent = "포기";
+  gameMessage.textContent = "빛나는 진주를 모으세요! 해파리에 닿으면 시간이 줄어듭니다.";
+  updateGameHUD();
+}
+
+function endGame(reason) {
+  const collected = PEARL_COUNT - game.pearls.length;
+  if (reason === "완주") {
+    game.score += Math.round(game.timeLeft) * 10;
+  }
+  game.state = "over";
+  game.timeLeft = Math.max(0, game.timeLeft);
+
+  if (game.score > game.best) {
+    game.best = game.score;
+    localStorage.setItem("pearlRushBest", String(game.best));
+    gameBestReadout.textContent = `최고 ${game.best.toLocaleString("ko-KR")}점`;
+    gameMessage.textContent = `신기록! ${game.score.toLocaleString("ko-KR")}점 (진주 ${collected}/${PEARL_COUNT})`;
+  } else if (reason === "완주") {
+    gameMessage.textContent = `진주를 전부 모았습니다! ${game.score.toLocaleString("ko-KR")}점`;
+  } else if (reason === "시간 종료") {
+    gameMessage.textContent = `시간 종료! ${game.score.toLocaleString("ko-KR")}점 (진주 ${collected}/${PEARL_COUNT})`;
+  } else {
+    gameMessage.textContent = `게임 중단. ${game.score.toLocaleString("ko-KR")}점`;
+  }
+
+  gameButton.textContent = "다시 시작";
+  clearGameObjects();
+  updateGameHUD();
+}
+
+function clearGameObjects() {
+  [...game.pearls, ...game.jellies].forEach((object) => {
+    gameGroup.remove(object);
+    object.traverse((child) => {
+      child.geometry?.dispose?.();
+      if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose?.());
+      else child.material?.dispose?.();
+    });
+  });
+  game.pearls = [];
+  game.jellies = [];
+}
+
+function makePearl() {
+  const group = new THREE.Group();
+  const orb = new THREE.Mesh(
+    new THREE.SphereGeometry(3.4, 20, 14),
+    toonMat({ color: 0xfff3d0, emissive: 0xc9a23f, emissiveIntensity: 0.55 }),
+  );
+  const halo = new THREE.Mesh(
+    new THREE.RingGeometry(4.6, 6, 26),
+    new THREE.MeshBasicMaterial({
+      color: 0xffe9a3,
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  const sparkle = new THREE.Sprite(makeSparkleMaterial());
+  sparkle.scale.setScalar(7);
+  sparkle.position.y = 4.5;
+  group.add(orb, halo, sparkle);
+  group.userData.halo = halo;
+  group.userData.sparkle = sparkle;
+  addCartoonOutline(orb, 1.1, 0x8a6a23, 1);
+  return group;
+}
+
+function makeJellyfish(size) {
+  const group = new THREE.Group();
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(size, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+    toonMat({ color: 0xf2a0d8, emissive: 0x8e3a78, emissiveIntensity: 0.45 }),
+  );
+  dome.scale.y = 0.78;
+  const skirt = new THREE.Mesh(
+    new THREE.ConeGeometry(size * 0.96, size * 0.7, 18, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xffc4ec,
+      transparent: true,
+      opacity: 0.42,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  skirt.position.y = -size * 0.3;
+  skirt.rotation.x = Math.PI;
+  group.add(dome, skirt);
+
+  const tentacleMaterial = new THREE.LineBasicMaterial({ color: 0xffb7e6, transparent: true, opacity: 0.7 });
+  for (let i = 0; i < 6; i += 1) {
+    const angle = (i / 6) * Math.PI * 2;
+    const points = [];
+    for (let j = 0; j <= 6; j += 1) {
+      const t = j / 6;
+      points.push(
+        new THREE.Vector3(
+          Math.cos(angle) * size * 0.5 + Math.sin(t * Math.PI * 2 + i) * 0.5,
+          -t * size * 2.4,
+          Math.sin(angle) * size * 0.5,
+        ),
+      );
+    }
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), tentacleMaterial.clone()));
+  }
+  group.userData.dome = dome;
+  addCartoonOutline(dome, 1.07, 0x7c2f6b, 1);
+  return group;
+}
+
+function updateGame(elapsed, delta) {
+  if (game.state !== "playing") return;
+
+  game.timeLeft -= delta;
+  game.stingCooldown = Math.max(0, game.stingCooldown - delta);
+  if (game.timeLeft <= 0) {
+    endGame("시간 종료");
+    return;
+  }
+
+  for (let i = game.pearls.length - 1; i >= 0; i -= 1) {
+    const pearl = game.pearls[i];
+    const data = pearl.userData.pearl;
+
+    if (data.popping > 0) {
+      data.popping -= delta;
+      pearl.scale.setScalar(Math.max(0.01, data.popping / 0.3) * 1.4);
+      if (data.popping <= 0) {
+        gameGroup.remove(pearl);
+        game.pearls.splice(i, 1);
+        if (game.pearls.length === 0) {
+          endGame("완주");
+          return;
+        }
+      }
+      continue;
+    }
+
+    pearl.rotation.y = elapsed * 0.8 + data.phase;
+    pearl.position.y += Math.sin(elapsed * 1.3 + data.phase) * delta * 1.6;
+    pearl.userData.halo.rotation.z = elapsed * 0.9 + data.phase;
+    pearl.userData.halo.quaternion.copy(camera.quaternion);
+    pearl.userData.sparkle.material.opacity = 0.45 + Math.sin(elapsed * 3 + data.phase) * 0.35;
+
+    if (pearl.position.distanceTo(sub.position) < PEARL_COLLECT_RANGE) {
+      const comboAlive = elapsed - game.lastCollectAt < 6;
+      game.combo = comboAlive ? game.combo + 1 : 1;
+      game.lastCollectAt = elapsed;
+      game.score += 100 * game.combo;
+      game.timeLeft = Math.min(GAME_DURATION, game.timeLeft + 3);
+      data.popping = 0.3;
+      gameMessage.textContent =
+        game.combo > 1
+          ? `콤보 x${game.combo}! +${(100 * game.combo).toLocaleString("ko-KR")}점 (+3초)`
+          : "진주 획득! +100점 (+3초)";
+    }
+  }
+
+  game.jellies.forEach((jelly) => {
+    const data = jelly.userData.jelly;
+    jelly.position.y = data.baseY + Math.sin(elapsed * data.speed + data.phase) * data.drift;
+    const pulse = 1 + Math.sin(elapsed * 2.2 + data.phase) * 0.1;
+    jelly.userData.dome.scale.set(pulse, 0.78 * (2 - pulse), pulse);
+
+    if (game.stingCooldown <= 0 && jelly.position.distanceTo(sub.position) < JELLY_STING_RANGE) {
+      game.timeLeft -= 8;
+      game.combo = 0;
+      game.stingCooldown = 1.6;
+      const away = sub.position.clone().sub(jelly.position).normalize();
+      velocity.addScaledVector(away, 55);
+      stingFlash.classList.remove("active");
+      void stingFlash.offsetWidth;
+      stingFlash.classList.add("active");
+      gameMessage.textContent = "해파리에 쏘였습니다! -8초";
+    }
+  });
+
+  updateGameHUD();
+}
+
+function updateGameHUD() {
+  gameScoreReadout.textContent = game.score.toLocaleString("ko-KR");
+  gameTimeReadout.textContent = `${Math.max(0, Math.ceil(game.timeLeft))}s`;
+  gamePearlsReadout.textContent =
+    game.state === "playing" ? `${PEARL_COUNT - game.pearls.length}/${PEARL_COUNT}` : "-";
 }
 
 window.addEventListener("resize", () => {

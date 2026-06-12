@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>심해 항행 시뮬레이터</title>
-    <link rel="stylesheet" href="./ocean.css?v=20260612b" />
+    <link rel="stylesheet" href="./ocean.css?v=20260612c" />
     <script type="importmap">
       {
         "imports": {
@@ -96,7 +96,31 @@
         <p id="targetInfo">따뜻한 해류가 지나며 산호와 암반이 아치처럼 이어진 지점입니다.</p>
       </section>
 
+      <section class="hud game-card" id="gameCard" aria-label="진주 러시 미니게임">
+        <div class="game-head">
+          <span>PEARL RUSH</span>
+          <strong id="gameBest">최고 0점</strong>
+        </div>
+        <div class="game-stats">
+          <div>
+            <span>점수</span>
+            <strong id="gameScore">0</strong>
+          </div>
+          <div>
+            <span>남은 시간</span>
+            <strong id="gameTime">90s</strong>
+          </div>
+          <div>
+            <span>진주</span>
+            <strong id="gamePearls">-</strong>
+          </div>
+        </div>
+        <button id="gameButton" type="button">게임 시작</button>
+        <p id="gameMessage" aria-live="polite">제한 시간 안에 진주 12개를 모으세요. 콤보로 점수가 배가됩니다!</p>
+      </section>
+
       <div class="reticle" aria-hidden="true"></div>
+      <div class="sting-flash" id="stingFlash" aria-hidden="true"></div>
       <div class="depth-vignette" aria-hidden="true"></div>
       <div class="mobile-controls" aria-label="모바일 항행">
         <button data-fly="forward" type="button">▲</button>
@@ -108,6 +132,6 @@
       </div>
     </main>
 
-    <script type="module" src="./ocean.js?v=20260612b"></script>
+    <script type="module" src="./ocean.js?v=20260612d"></script>
   </body>
 </html>
