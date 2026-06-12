@@ -2,38 +2,8 @@ import * as THREE from "three";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/GLTFLoader.js";
 
 const canvas = document.getElementById("ocean");
-const sonarCanvas = document.getElementById("sonar");
-const sonarContext = sonarCanvas.getContext("2d");
-const speedReadout = document.getElementById("speedReadout");
-const depthReadout = document.getElementById("depthReadout");
-const nearestReadout = document.getElementById("nearestReadout");
-const sonarTargetReadout = document.getElementById("sonarTargetReadout");
-const sonarRangeReadout = document.getElementById("sonarRangeReadout");
-const sonarDistanceReadout = document.getElementById("sonarDistanceReadout");
-const targetSelect = document.getElementById("targetSelect");
-const diveButton = document.getElementById("diveButton");
-const circleButton = document.getElementById("circleButton");
-const stopButton = document.getElementById("stopButton");
-const resetButton = document.getElementById("resetButton");
-const thrustSlider = document.getElementById("thrustSlider");
-const thrustReadout = document.getElementById("thrustReadout");
-const labelsToggle = document.getElementById("labelsToggle");
-const beaconsToggle = document.getElementById("beaconsToggle");
-const planktonToggle = document.getElementById("planktonToggle");
-const eventsToggle = document.getElementById("eventsToggle");
-const targetType = document.getElementById("targetType");
-const targetName = document.getElementById("targetName");
-const targetInfo = document.getElementById("targetInfo");
-const eventType = document.getElementById("eventType");
-const eventName = document.getElementById("eventName");
-const eventInfo = document.getElementById("eventInfo");
-const gameButton = document.getElementById("gameButton");
-const gameScoreReadout = document.getElementById("gameScore");
-const gameTimeReadout = document.getElementById("gameTime");
-const gamePearlsReadout = document.getElementById("gamePearls");
-const gameBestReadout = document.getElementById("gameBest");
-const gameMessage = document.getElementById("gameMessage");
-const stingFlash = document.getElementById("stingFlash");
+const intro = document.getElementById("intro");
+const hint = document.getElementById("hint");
 
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
@@ -54,11 +24,14 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.22;
 
-const sub = new THREE.Object3D();
-sub.position.set(-170, -28, 150);
-sub.rotation.set(-0.02, -0.78, 0, "YXZ");
-scene.add(sub);
-sub.add(camera);
+// 잠수자(1인칭 카메라 리그). 자유롭게 헤엄치며 만화 바다를 둘러본다.
+const diver = new THREE.Object3D();
+const spawnPosition = new THREE.Vector3(60, -150, 150);
+const spawnYaw = 0.16;
+const spawnPitch = -0.3;
+diver.position.copy(spawnPosition);
+scene.add(diver);
+diver.add(camera);
 
 const velocity = new THREE.Vector3();
 const forward = new THREE.Vector3();
@@ -67,8 +40,8 @@ const up = new THREE.Vector3();
 const move = { forward: 0, back: 0, left: 0, right: 0, up: 0, down: 0, boost: 0 };
 const mobileMove = { forward: 0, back: 0, left: 0, right: 0 };
 const seaFloorBase = -360;
-const minDiveY = -560;
-const maxDiveY = 42;
+const minDiveY = -540;
+const maxDiveY = 40;
 const modelBase = "./assets/models/";
 const marineModelAssets = {
   fish: { file: "fish.glb", scale: 2.8, rotation: [0, Math.PI / 2, 0] },
@@ -78,91 +51,38 @@ const marineModelAssets = {
 const marineModelCache = new Map();
 const gltfLoader = new GLTFLoader();
 
-let selectedTarget = "coralGate";
-let autoPilot = null;
 let activeLookButton = null;
-let yaw = sub.rotation.y;
-let pitch = sub.rotation.x;
-let thrust = 0.42;
-let lastNearest = null;
-let eventsEnabled = true;
-let nextEventAt = 7;
-let activeEvent = null;
+let yaw = spawnYaw;
+let pitch = spawnPitch;
 let zoomFov = camera.fov;
+let started = false;
 
-const renderStatus = {
-  frame: 0,
-  centerPixel: [0, 0, 0, 0],
-  sampleLuma: 0,
-  lastSampleAt: -1,
-  webgl: true,
-};
-window.__abyssDriftStatus = renderStatus;
+const renderStatus = { frame: 0, centerPixel: [0, 0, 0, 0], sampleLuma: 0, lastSampleAt: -1, webgl: true };
+window.__oceanStatus = renderStatus;
 document.documentElement.dataset.oceanReady = "1";
 
-const targets = [
-  {
-    id: "coralGate",
-    ko: "산호문",
-    type: "산호 지형",
-    position: new THREE.Vector3(-40, -238, -80),
-    color: "#ff9c78",
-    info: "따뜻한 해류가 지나며 산호와 암반이 아치처럼 이어진 지점입니다.",
-  },
-  {
-    id: "kelpCathedral",
-    ko: "켈프 성당",
-    type: "해조 숲",
-    position: new THREE.Vector3(145, -184, -170),
-    color: "#8fcf7d",
-    info: "높은 줄기들이 물결을 따라 흔들리며 좁은 수로를 만듭니다.",
-  },
-  {
-    id: "shipwreck",
-    ko: "침몰선",
-    type: "난파 지점",
-    position: new THREE.Vector3(230, -286, 80),
-    color: "#d8a15f",
-    info: "녹슨 선체 틈 사이로 탐조등이 닿으면 잔해의 윤곽이 떠오릅니다.",
-  },
-  {
-    id: "ventSpire",
-    ko: "열수 첨탑",
-    type: "지열 지형",
-    position: new THREE.Vector3(-225, -392, -235),
-    color: "#ffd36b",
-    info: "검은 연기처럼 보이는 뜨거운 물기둥이 해저에서 천천히 솟습니다.",
-  },
-  {
-    id: "glassTrench",
-    ko: "유리 해구",
-    type: "심해 협곡",
-    position: new THREE.Vector3(-310, -455, 65),
-    color: "#73d7ff",
-    info: "가파른 암반과 청록색 반사가 겹쳐 깊이를 가늠하기 어려운 해구입니다.",
-  },
-  {
-    id: "abyssArch",
-    ko: "심연 아치",
-    type: "암반 구조",
-    position: new THREE.Vector3(40, -420, 285),
-    color: "#b8a4ff",
-    info: "바닥 가까이에 누운 커다란 암석 고리가 먼 항로의 기준점처럼 서 있습니다.",
-  },
+// 만화 바다 속 풍경(랜드마크). 목표/계기판이 아니라 "둘러보는 대상".
+const sceneryPieces = [
+  { build: makeCoralTown, position: new THREE.Vector3(-30, -248, -150), outline: false },
+  { build: makeCoralGate, position: new THREE.Vector3(-190, -236, 70) },
+  { build: makeKelpForest, position: new THREE.Vector3(150, -208, -40) },
+  { build: makeKelpForest, position: new THREE.Vector3(60, -214, 120) },
+  { build: makeShipwreck, position: new THREE.Vector3(250, -286, 150) },
+  { build: makeVentSpire, position: new THREE.Vector3(-260, -392, -235) },
+  { build: makeGlassTrench, position: new THREE.Vector3(-320, -455, 80) },
+  { build: makeAbyssArch, position: new THREE.Vector3(70, -420, 300) },
 ];
 
-const targetMap = new Map();
-const labelSprites = [];
-const beaconObjects = [];
-const eventGroup = new THREE.Group();
 const marineLifeGroup = new THREE.Group();
 const cartoonWaterGroup = new THREE.Group();
-scene.add(eventGroup);
+const sceneryGroup = new THREE.Group();
 scene.add(marineLifeGroup);
 scene.add(cartoonWaterGroup);
+scene.add(sceneryGroup);
+const swayingParts = [];
+const plumeParts = [];
 
 let plankton;
-let sonarSweep = 0;
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 const motionScale = reducedMotion ? 0.35 : 1;
 
@@ -186,12 +106,7 @@ function makeToonGradient(steps) {
 }
 
 function toonMat({ color, emissive = 0x000000, emissiveIntensity = 0 }) {
-  return new THREE.MeshToonMaterial({
-    color,
-    gradientMap: toonGradient,
-    emissive,
-    emissiveIntensity,
-  });
+  return new THREE.MeshToonMaterial({ color, gradientMap: toonGradient, emissive, emissiveIntensity });
 }
 
 let waterUniforms = null;
@@ -210,29 +125,14 @@ const pointerNdc = new THREE.Vector2();
 const surfacePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -48);
 const surfaceHit = new THREE.Vector3();
 
-const gameGroup = new THREE.Group();
-scene.add(gameGroup);
-const game = {
-  state: "idle",
-  score: 0,
-  best: Number(localStorage.getItem("pearlRushBest") ?? 0) || 0,
-  timeLeft: 0,
-  combo: 0,
-  lastCollectAt: -99,
-  stingCooldown: 0,
-  pearls: [],
-  jellies: [],
-};
-
 setupLights();
 setupSeascape();
-setupTargets();
+setupScenery();
 setupPlankton();
 setupMarineLife();
 loadMarineLifeModels();
-setupUI();
-setupGameUI();
-resetDive();
+setupControls();
+resetView();
 animate();
 
 function setupLights() {
@@ -243,12 +143,12 @@ function setupLights() {
   surfaceLight.position.set(-120, 220, -120);
   scene.add(surfaceLight);
 
-  const subLight = new THREE.SpotLight(0xf4fff2, 3.4, 300, Math.PI / 7.5, 0.82, 1.2);
-  subLight.position.set(0, -1.2, 0);
-  subLight.target.position.set(0, -4, -120);
-  sub.add(subLight, subLight.target);
+  const diverLight = new THREE.SpotLight(0xf4fff2, 2.2, 320, Math.PI / 7, 0.85, 1.2);
+  diverLight.position.set(0, -1.2, 0);
+  diverLight.target.position.set(0, -4, -120);
+  diver.add(diverLight, diverLight.target);
 
-  const rimLight = new THREE.PointLight(0xffcf9d, 1.1, 300, 1.4);
+  const rimLight = new THREE.PointLight(0xffcf9d, 1.0, 300, 1.4);
   rimLight.position.set(120, -30, 80);
   scene.add(rimLight);
 }
@@ -421,9 +321,7 @@ function makeSeafloor() {
   geometry.rotateX(-Math.PI / 2);
 
   const group = new THREE.Group();
-  group.add(
-    new THREE.Mesh(geometry, toonMat({ color: 0xf2dc96, emissive: 0x8c6f33, emissiveIntensity: 0.16 })),
-  );
+  group.add(new THREE.Mesh(geometry, toonMat({ color: 0xf2dc96, emissive: 0x8c6f33, emissiveIntensity: 0.16 })));
 
   const layerSpecs = [
     { y: 1.4, opacity: 0.2, repeat: 7, speed: [0.009, 0.006] },
@@ -465,13 +363,7 @@ function makeCausticTexture() {
     context.lineWidth = 1.8 + Math.random() * 2.2;
     const start = Math.random() * Math.PI * 2;
     context.beginPath();
-    context.arc(
-      Math.random() * 256,
-      Math.random() * 256,
-      9 + Math.random() * 26,
-      start,
-      start + 0.8 + Math.random() * 1.6,
-    );
+    context.arc(Math.random() * 256, Math.random() * 256, 9 + Math.random() * 26, start, start + 0.8 + Math.random() * 1.6);
     context.stroke();
   }
   const texture = new THREE.CanvasTexture(causticCanvas);
@@ -624,7 +516,6 @@ function updateRipples(delta) {
 function makeLightShafts() {
   const group = new THREE.Group();
   // 포뇨풍 빛기둥: 수면에서 살짝 부채꼴로 퍼지며 거의 수직으로 내려오는 따뜻한 광선.
-  // 크림/노랑/연분홍/연민트 색조를 섞어 무지개빛 감성을 더한다.
   const shaftColors = [0xfff4cf, 0xfdebbf, 0xffe6ea, 0xeaffd9, 0xfff0d2];
   const ringCount = 22;
 
@@ -643,25 +534,15 @@ function makeLightShafts() {
       }),
     );
 
-    // 수면(y≈60) 근처에서 시작해 바닥을 향해 살짝만 벌어지게 배치.
     const angle = (i / ringCount) * Math.PI * 2 + Math.random() * 0.3;
     const startRadius = 80 + Math.random() * 540;
-    const top = new THREE.Vector3(
-      -120 + Math.cos(angle) * startRadius,
-      80,
-      -160 + Math.sin(angle) * startRadius * 0.85,
-    );
-    const floorTarget = top.clone().add(
-      new THREE.Vector3((Math.random() - 0.5) * 120, -760, (Math.random() - 0.5) * 120),
-    );
+    const top = new THREE.Vector3(-120 + Math.cos(angle) * startRadius, 80, -160 + Math.sin(angle) * startRadius * 0.85);
+    const floorTarget = top.clone().add(new THREE.Vector3((Math.random() - 0.5) * 120, -760, (Math.random() - 0.5) * 120));
     const mid = top.clone().lerp(floorTarget, 0.5);
     shaft.position.copy(mid);
     shaft.lookAt(floorTarget);
     shaft.rotateX(Math.PI / 2);
-    shaft.userData.shaft = {
-      phase: Math.random() * Math.PI * 2,
-      baseOpacity: shaft.material.opacity,
-    };
+    shaft.userData.shaft = { phase: Math.random() * Math.PI * 2, baseOpacity: shaft.material.opacity };
     group.add(shaft);
   }
 
@@ -688,21 +569,11 @@ function makeCartoonWaterDetails() {
       opacity: spec.opacity,
     });
     wave.position.set((index % 2 === 0 ? -1 : 1) * 40, spec.y, spec.z);
-    wave.userData.bigWave = {
-      baseX: wave.position.x,
-      baseY: spec.y,
-      phase: index * 1.7,
-      speed: spec.speed,
-      drift: spec.drift,
-    };
+    wave.userData.bigWave = { baseX: wave.position.x, baseY: spec.y, phase: index * 1.7, speed: spec.speed, drift: spec.drift };
     cartoonWaterGroup.add(wave);
   });
 
-  const waveMaterial = new THREE.LineBasicMaterial({
-    color: 0xf3fffb,
-    transparent: true,
-    opacity: 0.46,
-  });
+  const waveMaterial = new THREE.LineBasicMaterial({ color: 0xf3fffb, transparent: true, opacity: 0.46 });
   for (let i = 0; i < 14; i += 1) {
     const points = [];
     const width = 70 + Math.random() * 120;
@@ -720,12 +591,7 @@ function makeCartoonWaterDetails() {
       );
     }
     const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), waveMaterial.clone());
-    line.userData.wave = {
-      baseY,
-      phase: Math.random() * Math.PI * 2,
-      speed: 0.35 + Math.random() * 0.45,
-      drift: 3 + Math.random() * 7,
-    };
+    line.userData.wave = { baseY, phase: Math.random() * Math.PI * 2, speed: 0.35 + Math.random() * 0.45, drift: 3 + Math.random() * 7 };
     cartoonWaterGroup.add(line);
   }
 
@@ -735,28 +601,16 @@ function makeCartoonWaterDetails() {
     sparkle.position.set((Math.random() - 0.5) * 1050, 14 + Math.random() * 38, (Math.random() - 0.5) * 980);
     sparkle.scale.setScalar(2.5 + Math.random() * 5);
     sparkle.material.opacity = 0.26 + Math.random() * 0.38;
-    sparkle.userData.sparkle = {
-      phase: Math.random() * Math.PI * 2,
-      speed: 0.8 + Math.random() * 1.1,
-    };
+    sparkle.userData.sparkle = { phase: Math.random() * Math.PI * 2, speed: 0.8 + Math.random() * 1.1 };
     cartoonWaterGroup.add(sparkle);
   }
 
-  const foamMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.34,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
+  const foamMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.34, depthWrite: false, side: THREE.DoubleSide });
   for (let i = 0; i < 14; i += 1) {
     const foam = new THREE.Mesh(new THREE.RingGeometry(2 + Math.random() * 2, 2.3 + Math.random() * 3.5, 18), foamMaterial.clone());
     foam.position.set((Math.random() - 0.5) * 980, -8 + Math.random() * 34, (Math.random() - 0.5) * 940);
     foam.rotation.x = -Math.PI / 2;
-    foam.userData.foam = {
-      phase: Math.random() * Math.PI * 2,
-      speed: 0.18 + Math.random() * 0.28,
-    };
+    foam.userData.foam = { phase: Math.random() * Math.PI * 2, speed: 0.18 + Math.random() * 0.28 };
     cartoonWaterGroup.add(foam);
   }
 
@@ -778,12 +632,7 @@ function makeTubeWave({ width, amplitude, segments, radius, color, opacity }) {
   const curve = new THREE.CatmullRomCurve3(points);
   return new THREE.Mesh(
     new THREE.TubeGeometry(curve, segments * 2, radius, 8, false),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity,
-      depthWrite: false,
-    }),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }),
   );
 }
 
@@ -805,13 +654,7 @@ function makeSparkleMaterial() {
   context.stroke();
   const texture = new THREE.CanvasTexture(sparkleCanvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    opacity: 0.5,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
+  return new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending });
 }
 
 function makeDistantHaze() {
@@ -839,14 +682,7 @@ function makeDistantHaze() {
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   return new THREE.Points(
     geometry,
-    new THREE.PointsMaterial({
-      size: 5.8,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.18,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
+    new THREE.PointsMaterial({ size: 5.8, vertexColors: true, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending }),
   );
 }
 
@@ -867,32 +703,74 @@ function makeTerrainRocks() {
   return group;
 }
 
-function setupTargets() {
-  targets.forEach((target) => {
+function setupScenery() {
+  sceneryPieces.forEach((piece) => {
     const group = new THREE.Group();
-    group.position.copy(target.position);
-    scene.add(group);
-
-    if (target.id === "coralGate") makeCoralGate(group);
-    if (target.id === "kelpCathedral") makeKelpCathedral(group);
-    if (target.id === "shipwreck") makeShipwreck(group);
-    if (target.id === "ventSpire") makeVentSpire(group);
-    if (target.id === "glassTrench") makeGlassTrench(group);
-    if (target.id === "abyssArch") makeAbyssArch(group);
-    addCartoonOutline(group, 1.045, 0x2a7592, 24);
-
-    const beacon = makeBeacon(target.color);
-    beacon.position.y = 15;
-    group.add(beacon);
-    beaconObjects.push(beacon);
-
-    const label = makeLabel(target.ko);
-    label.position.y = 26;
-    group.add(label);
-    labelSprites.push(label);
-
-    targetMap.set(target.id, { ...target, group, beacon, label });
+    group.position.copy(piece.position);
+    piece.build(group);
+    if (piece.outline !== false) addCartoonOutline(group, 1.045, 0x2a7592, 24);
+    sceneryGroup.add(group);
   });
+}
+
+// 레퍼런스의 산호 마을: 따뜻한 모래색 탑이 층층이 쌓이고 아치형 창이 늘어선 동화풍 건물.
+function makeCoralTown(group) {
+  const sand = toonMat({ color: 0xf0cd86, emissive: 0x8a6a2e, emissiveIntensity: 0.2 });
+  const sandLight = toonMat({ color: 0xfbe2a6, emissive: 0x9a7a3a, emissiveIntensity: 0.2 });
+  const windowMat = toonMat({ color: 0x2c6f6a, emissive: 0x0d2f2c, emissiveIntensity: 0.55 });
+
+  const mound = new THREE.Mesh(new THREE.SphereGeometry(64, 26, 16, 0, Math.PI * 2, 0, Math.PI / 2), sand);
+  mound.scale.y = 0.5;
+  mound.position.y = -22;
+  group.add(mound);
+
+  const tiers = [
+    { r: 44, h: 26, y: -6 },
+    { r: 34, h: 22, y: 18 },
+    { r: 25, h: 18, y: 38 },
+    { r: 17, h: 15, y: 56 },
+  ];
+  tiers.forEach((tier, ti) => {
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(tier.r, tier.r * 1.07, tier.h, 24), ti % 2 ? sandLight : sand);
+    drum.position.y = tier.y;
+    group.add(drum);
+
+    const windowCount = Math.max(6, Math.round(tier.r / 4));
+    for (let w = 0; w < windowCount; w += 1) {
+      const a = (w / windowCount) * Math.PI * 2;
+      const win = new THREE.Mesh(new THREE.BoxGeometry(4.2, tier.h * 0.52, 3.4), windowMat);
+      win.position.set(Math.cos(a) * tier.r * 1.02, tier.y, Math.sin(a) * tier.r * 1.02);
+      win.rotation.y = Math.PI / 2 - a;
+      group.add(win);
+
+      const arch = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, 3.2, 10, 1, false, 0, Math.PI), ti % 2 ? sandLight : sand);
+      arch.position.set(Math.cos(a) * tier.r * 1.02, tier.y + tier.h * 0.28, Math.sin(a) * tier.r * 1.02);
+      arch.rotation.set(Math.PI / 2, 0, Math.PI / 2 - a);
+      group.add(arch);
+    }
+  });
+
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(17, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2), sandLight);
+  dome.position.y = 63;
+  group.add(dome);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(3.2, 14, 10), toonMat({ color: 0xff8a70, emissive: 0x7c2c20, emissiveIntensity: 0.4 }));
+  knob.position.y = 82;
+  group.add(knob);
+
+  // 마을을 두른 알록달록한 산호·말미잘.
+  const coralColors = [0xff8a70, 0xff6f9c, 0xffd27a, 0x8a7bff, 0x5fd6c0, 0xff9ad8];
+  for (let i = 0; i < 46; i += 1) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 50 + Math.random() * 36;
+    const c = coralColors[i % coralColors.length];
+    const coral = new THREE.Mesh(
+      new THREE.ConeGeometry(1.2 + Math.random() * 2, 5 + Math.random() * 11, 6),
+      toonMat({ color: c, emissive: new THREE.Color(c).multiplyScalar(0.22), emissiveIntensity: 0.32 }),
+    );
+    coral.position.set(Math.cos(a) * r, -18 + Math.random() * 8, Math.sin(a) * r);
+    coral.rotation.set((Math.random() - 0.5) * 0.5, Math.random() * Math.PI, (Math.random() - 0.5) * 0.45);
+    group.add(coral);
+  }
 }
 
 function makeCoralGate(group) {
@@ -915,28 +793,25 @@ function makeCoralGate(group) {
   }
 }
 
-function makeKelpCathedral(group) {
-  const stalkMaterial = toonMat({ color: 0x59b964, emissive: 0x17471f, emissiveIntensity: 0.35 });
-  const leafMaterial = new THREE.MeshBasicMaterial({
-    color: 0x9ad681,
-    transparent: true,
-    opacity: 0.72,
-    side: THREE.DoubleSide,
-  });
+function makeKelpForest(group) {
+  const stalkMaterial = toonMat({ color: 0x3f9a4f, emissive: 0x123a18, emissiveIntensity: 0.35 });
+  const leafMaterial = new THREE.MeshBasicMaterial({ color: 0x2f8a3e, transparent: true, opacity: 0.82, side: THREE.DoubleSide });
 
-  for (let i = 0; i < 46; i += 1) {
-    const height = 24 + Math.random() * 36;
-    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.65, height, 8), stalkMaterial);
-    stalk.position.set((Math.random() - 0.5) * 78, height / 2 - 18, (Math.random() - 0.5) * 52);
+  for (let i = 0; i < 52; i += 1) {
+    const height = 28 + Math.random() * 48;
+    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.7, height, 8), stalkMaterial);
+    stalk.position.set((Math.random() - 0.5) * 86, height / 2 - 18, (Math.random() - 0.5) * 58);
     stalk.rotation.z = (Math.random() - 0.5) * 0.22;
     stalk.userData.wavePhase = Math.random() * Math.PI * 2;
+    swayingParts.push(stalk);
     group.add(stalk);
 
-    for (let j = 0; j < 2; j += 1) {
-      const leaf = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 10), leafMaterial);
-      leaf.position.set(stalk.position.x + (Math.random() - 0.5) * 4, stalk.position.y + height * 0.18, stalk.position.z);
+    for (let j = 0; j < 3; j += 1) {
+      const leaf = new THREE.Mesh(new THREE.PlaneGeometry(4, 12), leafMaterial);
+      leaf.position.set(stalk.position.x + (Math.random() - 0.5) * 5, stalk.position.y + height * (0.1 + j * 0.18), stalk.position.z);
       leaf.rotation.set(Math.random() * 0.5, Math.random() * Math.PI, (Math.random() - 0.5) * 0.8);
       leaf.userData.wavePhase = stalk.userData.wavePhase + j;
+      swayingParts.push(leaf);
       group.add(leaf);
     }
   }
@@ -965,13 +840,7 @@ function makeShipwreck(group) {
 
 function makeVentSpire(group) {
   const rockMaterial = toonMat({ color: 0x3c4a52, emissive: 0x17100a, emissiveIntensity: 0.3 });
-  const glowMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffd36b,
-    transparent: true,
-    opacity: 0.24,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
+  const glowMaterial = new THREE.MeshBasicMaterial({ color: 0xffd36b, transparent: true, opacity: 0.24, blending: THREE.AdditiveBlending, depthWrite: false });
 
   for (let i = 0; i < 7; i += 1) {
     const height = 18 + Math.random() * 32;
@@ -981,7 +850,7 @@ function makeVentSpire(group) {
 
     const plume = new THREE.Mesh(new THREE.CylinderGeometry(6, 2, 58, 18, 1, true), glowMaterial);
     plume.position.set(vent.position.x, vent.position.y + height * 0.55, vent.position.z);
-    plume.userData.plume = true;
+    plumeParts.push(plume);
     group.add(plume);
   }
 }
@@ -1012,15 +881,15 @@ function setupPlankton() {
   const count = 1300;
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
-  const colorA = new THREE.Color("#5ff2d0");
-  const colorB = new THREE.Color("#ff9c78");
+  const colorA = new THREE.Color("#aef7d6");
+  const colorB = new THREE.Color("#ffe6a8");
 
   for (let i = 0; i < count; i += 1) {
     const index = i * 3;
     positions[index] = (Math.random() - 0.5) * 250;
     positions[index + 1] = (Math.random() - 0.5) * 150;
     positions[index + 2] = (Math.random() - 0.5) * 250;
-    const color = colorA.clone().lerp(colorB, Math.random() * 0.35);
+    const color = colorA.clone().lerp(colorB, Math.random() * 0.4);
     colors[index] = color.r;
     colors[index + 1] = color.g;
     colors[index + 2] = color.b;
@@ -1030,29 +899,27 @@ function setupPlankton() {
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   plankton = new THREE.Points(
     geometry,
-    new THREE.PointsMaterial({
-      size: 0.44,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.55,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
+    new THREE.PointsMaterial({ size: 0.5, vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }),
   );
   plankton.name = "localPlankton";
-  sub.add(plankton);
+  diver.add(plankton);
 }
 
 function setupMarineLife() {
-  // 니모풍 산호색·청록·남색 물고기 떼.
-  const fishPalette = [0xff8a5c, 0xffb347, 0xff6f61, 0x5fd6c0, 0x4aa3d9, 0x3b6fb0, 0xffd27a];
-  for (let i = 0; i < 64; i += 1) {
+  // 니모풍 산호색·청록·남색 물고기 떼. 일부는 산호 마을 주변에 모여 헤엄친다.
+  const fishPalette = [0xff8a5c, 0xffb347, 0xff6f61, 0x5fd6c0, 0x4aa3d9, 0x3b6fb0, 0xffd27a, 0xff7fa8];
+  const townCenter = sceneryPieces[0].position;
+  for (let i = 0; i < 90; i += 1) {
     const fish = makeFish(0.7 + Math.random() * 1.7, fishPalette[Math.floor(Math.random() * fishPalette.length)]);
     fish.userData.modelKind = "fish";
+    const nearTown = i % 2 === 0;
     placeSwimmer(fish, {
-      radius: 120 + Math.random() * 560,
+      center: nearTown
+        ? townCenter.clone().add(new THREE.Vector3((Math.random() - 0.5) * 160, 40 + Math.random() * 90, (Math.random() - 0.5) * 160))
+        : null,
+      radius: nearTown ? 40 + Math.random() * 120 : 120 + Math.random() * 560,
       y: -70 - Math.random() * 310,
-      speed: 0.12 + Math.random() * 0.22,
+      speed: 0.12 + Math.random() * 0.24,
       bob: 3 + Math.random() * 9,
       phase: Math.random() * Math.PI * 2,
     });
@@ -1062,28 +929,21 @@ function setupMarineLife() {
   for (let i = 0; i < 5; i += 1) {
     const shark = makeShark(5.5 + Math.random() * 2.8);
     shark.userData.modelKind = "shark";
-    placeSwimmer(shark, {
-      radius: 240 + Math.random() * 520,
-      y: -150 - Math.random() * 260,
-      speed: 0.08 + Math.random() * 0.08,
-      bob: 6 + Math.random() * 12,
-      phase: Math.random() * Math.PI * 2,
-      predator: true,
-    });
+    placeSwimmer(shark, { radius: 240 + Math.random() * 520, y: -150 - Math.random() * 260, speed: 0.08 + Math.random() * 0.08, bob: 6 + Math.random() * 12, phase: Math.random() * Math.PI * 2, predator: true });
     marineLifeGroup.add(shark);
+  }
+
+  for (let i = 0; i < 6; i += 1) {
+    const jelly = makeJellyfish(3.2 + Math.random() * 3);
+    jelly.userData.modelKind = "jelly";
+    placeSwimmer(jelly, { radius: 60 + Math.random() * 320, y: -110 - Math.random() * 230, speed: 0.04 + Math.random() * 0.05, bob: 18 + Math.random() * 22, phase: Math.random() * Math.PI * 2, jelly: true });
+    marineLifeGroup.add(jelly);
   }
 
   for (let i = 0; i < 2; i += 1) {
     const whale = makeOceanWhale(13 + Math.random() * 5);
     whale.userData.modelKind = "whale";
-    placeSwimmer(whale, {
-      radius: 390 + Math.random() * 380,
-      y: -230 - Math.random() * 230,
-      speed: 0.035 + Math.random() * 0.025,
-      bob: 14 + Math.random() * 18,
-      phase: Math.random() * Math.PI * 2,
-      whale: true,
-    });
+    placeSwimmer(whale, { radius: 390 + Math.random() * 380, y: -230 - Math.random() * 230, speed: 0.035 + Math.random() * 0.025, bob: 14 + Math.random() * 18, phase: Math.random() * Math.PI * 2, whale: true });
     marineLifeGroup.add(whale);
   }
   document.documentElement.dataset.oceanLife = String(marineLifeGroup.children.length);
@@ -1130,10 +990,7 @@ function normalizeMarineModel(sceneObject, asset) {
 function replaceMarineFallbacks(kind, template) {
   marineLifeGroup.children.forEach((creature) => {
     if (creature.userData.modelKind !== kind || creature.userData.externalModelApplied) return;
-    const keep = {
-      swim: creature.userData.swim,
-      modelKind: creature.userData.modelKind,
-    };
+    const keep = { swim: creature.userData.swim, modelKind: creature.userData.modelKind };
     creature.clear();
     creature.add(template.clone(true));
     creature.userData.swim = keep.swim;
@@ -1146,29 +1003,21 @@ function replaceMarineFallbacks(kind, template) {
 
 function placeSwimmer(group, data) {
   group.userData.swim = {
-    center: new THREE.Vector3((Math.random() - 0.5) * 420, data.y, (Math.random() - 0.5) * 420),
+    center: data.center ?? new THREE.Vector3((Math.random() - 0.5) * 420, data.y, (Math.random() - 0.5) * 420),
     radius: data.radius,
     speed: data.speed,
     bob: data.bob,
     phase: data.phase,
     predator: data.predator ?? false,
     whale: data.whale ?? false,
+    jelly: data.jelly ?? false,
   };
 }
 
 function makeFish(size, color) {
   const group = new THREE.Group();
-  const bodyMaterial = toonMat({
-    color,
-    emissive: new THREE.Color(color).multiplyScalar(0.14),
-    emissiveIntensity: 0.25,
-  });
-  const finMaterial = new THREE.MeshBasicMaterial({
-    color: 0xd7fff4,
-    transparent: true,
-    opacity: 0.58,
-    side: THREE.DoubleSide,
-  });
+  const bodyMaterial = toonMat({ color, emissive: new THREE.Color(color).multiplyScalar(0.14), emissiveIntensity: 0.25 });
+  const finMaterial = new THREE.MeshBasicMaterial({ color: 0xd7fff4, transparent: true, opacity: 0.58, side: THREE.DoubleSide });
   const body = new THREE.Mesh(new THREE.SphereGeometry(size, 16, 10), bodyMaterial);
   body.scale.set(1.8, 0.62, 0.72);
   const tail = new THREE.Mesh(new THREE.ConeGeometry(size * 0.72, size * 1.8, 3), finMaterial);
@@ -1203,6 +1052,36 @@ function makeShark(size) {
   return group;
 }
 
+function makeJellyfish(size) {
+  const group = new THREE.Group();
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(size, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+    toonMat({ color: 0xf2a0d8, emissive: 0x8e3a78, emissiveIntensity: 0.45 }),
+  );
+  dome.scale.y = 0.82;
+  const skirt = new THREE.Mesh(
+    new THREE.ConeGeometry(size * 0.96, size * 0.7, 18, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffc4ec, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  skirt.position.y = -size * 0.3;
+  skirt.rotation.x = Math.PI;
+  group.add(dome, skirt);
+
+  const tentacleMaterial = new THREE.LineBasicMaterial({ color: 0xffb7e6, transparent: true, opacity: 0.7 });
+  for (let i = 0; i < 6; i += 1) {
+    const angle = (i / 6) * Math.PI * 2;
+    const points = [];
+    for (let j = 0; j <= 6; j += 1) {
+      const t = j / 6;
+      points.push(new THREE.Vector3(Math.cos(angle) * size * 0.5 + Math.sin(t * Math.PI * 2 + i) * 0.5, -t * size * 2.4, Math.sin(angle) * size * 0.5));
+    }
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), tentacleMaterial.clone()));
+  }
+  group.userData.dome = dome;
+  addCartoonOutline(dome, 1.07, 0x7c2f6b, 1);
+  return group;
+}
+
 function makeOceanWhale(size) {
   const group = new THREE.Group();
   const material = toonMat({ color: 0x6788a3, emissive: 0x14202e, emissiveIntensity: 0.22 });
@@ -1234,13 +1113,7 @@ function makeOceanWhale(size) {
 }
 
 function addCartoonOutline(root, scale = 1.04, color = 0x1d4f66, maxMeshes = 48) {
-  const outlineMaterial = new THREE.MeshBasicMaterial({
-    color,
-    side: THREE.BackSide,
-    transparent: true,
-    opacity: 0.95,
-    depthWrite: false,
-  });
+  const outlineMaterial = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide, transparent: true, opacity: 0.95, depthWrite: false });
   const meshes = [];
   root.traverse((child) => {
     if (child.isMesh && !child.userData.outline) meshes.push(child);
@@ -1256,134 +1129,19 @@ function addCartoonOutline(root, scale = 1.04, color = 0x1d4f66, maxMeshes = 48)
   });
 }
 
-function makeBeacon(color) {
-  const group = new THREE.Group();
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.1, 1.1, 34, 16, 1, true),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.24,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  const orb = new THREE.Mesh(
-    new THREE.SphereGeometry(2.3, 24, 14),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
-  orb.position.y = 17;
-  group.add(beam, orb);
-  group.userData.orb = orb;
-  return group;
-}
-
-function makeLabel(text) {
-  const labelCanvas = document.createElement("canvas");
-  labelCanvas.width = 256;
-  labelCanvas.height = 72;
-  const context = labelCanvas.getContext("2d");
-  context.font = "700 30px system-ui, sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillStyle = "rgba(2, 13, 18, 0.62)";
-  context.roundRect(18, 12, 220, 48, 10);
-  context.fill();
-  context.strokeStyle = "rgba(95, 242, 208, 0.36)";
-  context.stroke();
-  context.fillStyle = "#eefcff";
-  context.fillText(text, 128, 38);
-  const texture = new THREE.CanvasTexture(labelCanvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: texture,
-      transparent: true,
-      depthWrite: false,
-      depthTest: false,
-    }),
-  );
-  sprite.scale.set(22, 6.2, 1);
-  return sprite;
-}
-
-function setupUI() {
-  targets.forEach((target) => {
-    const option = document.createElement("option");
-    option.value = target.id;
-    option.textContent = target.ko;
-    targetSelect.appendChild(option);
-  });
-  targetSelect.value = selectedTarget;
-  updateTargetCard();
-
-  targetSelect.addEventListener("change", () => {
-    selectedTarget = targetSelect.value;
-    autoPilot = null;
-    updateTargetCard();
-  });
-
-  diveButton.addEventListener("click", () => {
-    autoPilot = { mode: "dive", target: selectedTarget };
-  });
-
-  circleButton.addEventListener("click", () => {
-    autoPilot = { mode: "circle", target: selectedTarget, angle: 0 };
-  });
-
-  stopButton.addEventListener("click", stopDive);
-  resetButton.addEventListener("click", resetDive);
-
-  thrustSlider.addEventListener("input", () => {
-    thrust = Number(thrustSlider.value) / 100;
-    thrustReadout.textContent = `${Math.round(thrust * 100)}%`;
-  });
-
-  labelsToggle.addEventListener("change", () => {
-    labelSprites.forEach((label) => {
-      label.visible = labelsToggle.checked;
-    });
-  });
-
-  beaconsToggle.addEventListener("change", () => {
-    beaconObjects.forEach((beacon) => {
-      beacon.visible = beaconsToggle.checked;
-    });
-  });
-
-  planktonToggle.addEventListener("change", () => {
-    plankton.visible = planktonToggle.checked;
-  });
-
-  eventsToggle.addEventListener("change", () => {
-    eventsEnabled = eventsToggle.checked;
-    if (eventsEnabled) {
-      scheduleNextEvent(clock.elapsedTime, 3);
-      setEventCard("해류 안정", "정상 잠항", "수온약층과 발광 입자가 다시 흐르기 시작했습니다.");
-    } else {
-      clearActiveEvent();
-      setEventCard("이벤트 중지", "잔잔한 항로", "갑작스러운 해류와 발광 구름이 발생하지 않습니다.");
-    }
-  });
-
+function setupControls() {
   window.addEventListener("keydown", setKey);
   window.addEventListener("keyup", setKey);
+
   canvas.addEventListener("pointerdown", (event) => {
+    markStarted();
     if (event.button !== 0 && event.button !== 2) return;
     activeLookButton = event.button;
     canvas.setPointerCapture(event.pointerId);
 
     pointerNdc.set((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
     surfaceRaycaster.setFromCamera(pointerNdc, camera);
-    if (
-      surfaceRaycaster.ray.intersectPlane(surfacePlane, surfaceHit) &&
-      surfaceHit.distanceTo(sub.position) < 1300
-    ) {
+    if (surfaceRaycaster.ray.intersectPlane(surfacePlane, surfaceHit) && surfaceHit.distanceTo(diver.position) < 1300) {
       spawnSurfaceSplash(surfaceHit, 1);
     }
   });
@@ -1399,7 +1157,6 @@ function setupUI() {
     yaw -= event.movementX * 0.0022;
     pitch -= event.movementY * 0.0022;
     pitch = THREE.MathUtils.clamp(pitch, -1.1, 1.05);
-    autoPilot = null;
   });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   canvas.addEventListener(
@@ -1418,86 +1175,105 @@ function setupUI() {
     const set = (value) => {
       mobileMove[direction] = value;
       move[direction] = value;
+      if (value) markStarted();
     };
     button.addEventListener("pointerdown", () => set(1));
     button.addEventListener("pointerup", () => set(0));
     button.addEventListener("pointercancel", () => set(0));
     button.addEventListener("pointerleave", () => set(0));
   });
+
+  // 인트로는 잠시 후 저절로 사라진다.
+  setTimeout(() => markStarted(), 6500);
+}
+
+function markStarted() {
+  if (started) return;
+  started = true;
+  intro?.classList.add("hidden");
+  hint?.classList.add("dim");
 }
 
 function setKey(event) {
   const value = event.type === "keydown" ? 1 : 0;
   const key = event.key.toLowerCase();
-  if (event.type === "keydown" && event.code === "Space") {
+  if (value) markStarted();
+
+  if (event.code === "Space") {
     event.preventDefault();
-    stopDive();
+    move.up = value;
     return;
   }
-  if (key === "e") move.forward = value;
-  if (key === "q") move.back = value;
+  if (key === "w") move.forward = value;
+  if (key === "s") move.back = value;
   if (key === "a") move.left = value;
   if (key === "d") move.right = value;
-  if (key === "s") move.down = value;
-  if (key === "w") move.up = value;
+  if (key === "c") move.down = value;
   if (key === "shift") move.boost = value;
-  if (["w", "a", "s", "d", "q", "e", "shift"].includes(key)) {
-    autoPilot = null;
-  }
+  if (key === "r" && value) resetView();
 }
 
-function stopDive() {
-  autoPilot = null;
+function resetView() {
+  diver.position.copy(spawnPosition);
+  yaw = spawnYaw;
+  pitch = spawnPitch;
   velocity.set(0, 0, 0);
 }
 
-function resetDive() {
-  sub.position.set(-170, -28, 150);
-  yaw = -0.78;
-  pitch = -0.02;
-  velocity.set(0, 0, 0);
-  autoPilot = null;
+function tick(delta, elapsed) {
+  updateScenery(elapsed);
+  updateWaterStyle(elapsed, delta);
+  updateCartoonWater(elapsed, delta);
+  updateMarineLife(elapsed, delta);
+  updateSwim(delta, elapsed);
+  renderer.render(scene, camera);
+  sampleRender(elapsed);
 }
 
 function animate() {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.05);
-  const elapsed = clock.elapsedTime;
-
-  updateTargets(elapsed);
-  updateWaterStyle(elapsed, delta);
-  updateCartoonWater(elapsed, delta);
-  updateMarineLife(elapsed, delta);
-  updateEvents(elapsed, delta);
-  updateDive(delta, elapsed);
-  updateGame(elapsed, delta);
-  updateHUD();
-  updateSonar(delta);
-  renderer.render(scene, camera);
-  sampleRender(elapsed);
+  tick(delta, clock.elapsedTime);
 }
 
-function updateTargets(elapsed) {
-  targetMap.forEach((target) => {
-    target.beacon.rotation.y = elapsed * 0.9;
-    const orb = target.beacon.userData.orb;
-    if (orb) orb.scale.setScalar(1 + Math.sin(elapsed * 2.4) * 0.12);
-    target.label.quaternion.copy(camera.quaternion);
-    target.group.traverse((child) => {
-      if (child.userData.wavePhase !== undefined) {
-        child.rotation.z += Math.sin(elapsed * 1.1 + child.userData.wavePhase) * 0.0009;
-      }
-      if (child.userData.plume) {
-        child.rotation.y += 0.006;
-        child.material.opacity = 0.16 + Math.sin(elapsed * 1.7 + child.position.x) * 0.05;
-      }
-    });
-  });
+// 백그라운드 탭(미리보기)에서 rAF가 멈춰도 한 프레임 강제 렌더하기 위한 검증용 훅.
+window.__oceanTick = (frames = 1) => {
+  for (let i = 0; i < frames; i += 1) tick(0.016, clock.elapsedTime + i * 0.016);
+};
 
+// 스크린샷이 불가능한 환경에서 렌더 버퍼를 격자로 샘플링해 구도를 확인하기 위한 검증용 훅.
+window.__oceanSample = (cols = 9, rows = 6) => {
+  tick(0.016, clock.elapsedTime);
+  const gl = renderer.getContext();
+  const w = gl.drawingBufferWidth;
+  const h = gl.drawingBufferHeight;
+  const pixel = new Uint8Array(4);
+  const rowsOut = [];
+  for (let r = 0; r < rows; r += 1) {
+    let line = "";
+    for (let c = 0; c < cols; c += 1) {
+      const x = Math.floor((c + 0.5) * (w / cols));
+      const y = Math.floor((rows - 1 - r + 0.5) * (h / rows));
+      gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      line += `#${[pixel[0], pixel[1], pixel[2]].map((v) => v.toString(16).padStart(2, "0")).join("")} `;
+    }
+    rowsOut.push(line.trim());
+  }
+  return rowsOut;
+};
+
+function updateScenery(elapsed) {
+  for (const part of swayingParts) {
+    part.rotation.z += Math.sin(elapsed * 1.1 + part.userData.wavePhase) * 0.0011;
+  }
+  for (const plume of plumeParts) {
+    plume.rotation.y += 0.006;
+    plume.material.opacity = 0.16 + Math.sin(elapsed * 1.7 + plume.position.x) * 0.05;
+  }
   if (plankton) {
     plankton.rotation.y = Math.sin(elapsed * 0.22) * 0.08;
     plankton.rotation.x = Math.cos(elapsed * 0.18) * 0.04;
-    plankton.material.opacity = THREE.MathUtils.clamp(0.38 + velocity.length() * 0.025, 0.38, 0.78);
+    plankton.material.opacity = THREE.MathUtils.clamp(0.38 + velocity.length() * 0.02, 0.38, 0.7);
   }
 }
 
@@ -1509,7 +1285,7 @@ function updateWaterStyle(elapsed, delta) {
     texture.offset.y += texture.userData.speed[1] * delta * motionScale * 2.5;
   });
 
-  const depthT = THREE.MathUtils.clamp((-sub.position.y - 20) / 460, 0, 1);
+  const depthT = THREE.MathUtils.clamp((-diver.position.y - 20) / 460, 0, 1);
   if (depthT < 0.5) {
     scene.background.lerpColors(shallowBackground, midBackground, depthT / 0.5);
   } else {
@@ -1521,9 +1297,7 @@ function updateWaterStyle(elapsed, delta) {
   if (backdropGroup) {
     const fade = 1 - depthT * 0.72;
     backdropGroup.children.forEach((child) => {
-      if (child.userData.baseOpacity !== undefined) {
-        child.material.opacity = child.userData.baseOpacity * fade;
-      }
+      if (child.userData.baseOpacity !== undefined) child.material.opacity = child.userData.baseOpacity * fade;
     });
   }
 
@@ -1536,9 +1310,9 @@ function updateWaterStyle(elapsed, delta) {
 
   if (bubbleField) updateBubbles(elapsed, delta);
 
-  if (sub.position.y > 14 && velocity.length() > 14 && elapsed > nextWakeAt) {
+  if (diver.position.y > 14 && velocity.length() > 14 && elapsed > nextWakeAt) {
     nextWakeAt = elapsed + 0.55;
-    spawnSurfaceSplash(sub.position, 0.55);
+    spawnSurfaceSplash(diver.position, 0.55);
   }
 
   updateRipples(delta);
@@ -1551,7 +1325,7 @@ function updateCartoonWater(elapsed, delta) {
       const wave = object.userData.bigWave;
       object.position.x = wave.baseX + Math.sin(elapsed * wave.speed + wave.phase) * wave.drift;
       object.position.y = wave.baseY + Math.sin(elapsed * wave.speed * 0.8 + wave.phase) * 2.2;
-      object.material.opacity = THREE.MathUtils.clamp(object.material.opacity + Math.sin(elapsed * 0.5 + wave.phase) * 0.0008, 0.28, 0.64);
+      object.material.opacity = THREE.MathUtils.clamp(object.material.opacity + Math.sin(elapsed * 0.5 + wave.phase) * 0.0008, 0.28, 0.7);
     }
 
     if (object.userData.wave) {
@@ -1584,6 +1358,20 @@ function updateMarineLife(elapsed, delta) {
     const swim = creature.userData.swim;
     if (!swim) return;
 
+    if (swim.jelly) {
+      // 해파리는 위아래로 부드럽게 떠다닌다.
+      creature.position.set(
+        swim.center.x + Math.sin(lifeElapsed * swim.speed + swim.phase) * swim.radius * 0.4,
+        swim.center.y + Math.sin(lifeElapsed * 0.5 + swim.phase) * swim.bob,
+        swim.center.z + Math.cos(lifeElapsed * swim.speed * 0.8 + swim.phase) * swim.radius * 0.4,
+      );
+      if (creature.userData.dome) {
+        const pulse = 1 + Math.sin(lifeElapsed * 2 + swim.phase) * 0.12;
+        creature.userData.dome.scale.set(pulse, 0.82 * (2 - pulse), pulse);
+      }
+      return;
+    }
+
     const angle = swim.phase + lifeElapsed * swim.speed;
     const wobble = Math.sin(lifeElapsed * (swim.predator ? 0.9 : 1.6) + swim.phase);
     creature.position.set(
@@ -1610,310 +1398,36 @@ function updateMarineLife(elapsed, delta) {
   });
 }
 
-function updateDive(delta, elapsed) {
-  sub.rotation.set(pitch, yaw, Math.sin(elapsed * 0.8) * 0.01, "YXZ");
+function updateSwim(delta, elapsed) {
+  diver.rotation.set(pitch, yaw, Math.sin(elapsed * 0.8) * 0.01, "YXZ");
   camera.getWorldDirection(forward);
-  right.set(1, 0, 0).applyQuaternion(sub.quaternion).normalize();
-  up.set(0, 1, 0).applyQuaternion(sub.quaternion).normalize();
+  right.set(1, 0, 0).applyQuaternion(diver.quaternion).normalize();
+  up.set(0, 1, 0).applyQuaternion(diver.quaternion).normalize();
 
-  if (autoPilot) {
-    runAutopilot(delta);
+  const cruiseSpeed = 46;
+  const boost = move.boost ? 1.8 : 1;
+  const desired = new THREE.Vector3();
+  desired.addScaledVector(forward, move.forward - move.back);
+  desired.addScaledVector(right, move.right - move.left);
+  desired.addScaledVector(up, move.up - move.down);
+  if (desired.lengthSq() > 0) {
+    desired.normalize().multiplyScalar(cruiseSpeed * boost);
+    velocity.lerp(desired, THREE.MathUtils.clamp(delta * 3.4, 0, 1));
   } else {
-    const cruiseSpeed = 18 + thrust * 72;
-    const boost = move.boost ? 1.65 : 1;
-    const desired = new THREE.Vector3();
-    desired.addScaledVector(forward, move.forward - move.back);
-    desired.addScaledVector(right, move.right - move.left);
-    desired.addScaledVector(up, move.up - move.down);
-    if (desired.lengthSq() > 0) {
-      desired.normalize().multiplyScalar(cruiseSpeed * boost);
-      velocity.lerp(desired, THREE.MathUtils.clamp(delta * 4.2, 0, 1));
-    } else {
-      velocity.multiplyScalar(Math.pow(0.12, delta));
-    }
+    velocity.multiplyScalar(Math.pow(0.1, delta));
   }
 
-  velocity.multiplyScalar(Math.pow(autoPilot ? 0.86 : 0.72, delta));
-  const maxSpeed = autoPilot ? 118 : 34 + thrust * 92;
+  velocity.multiplyScalar(Math.pow(0.74, delta));
+  const maxSpeed = 44 * boost;
   if (velocity.length() > maxSpeed) velocity.setLength(maxSpeed);
-  sub.position.addScaledVector(velocity, delta);
-  sub.position.y = THREE.MathUtils.clamp(sub.position.y, minDiveY, maxDiveY);
+  diver.position.addScaledVector(velocity, delta);
+  diver.position.y = THREE.MathUtils.clamp(diver.position.y, minDiveY, maxDiveY);
 
-  const floor = terrainHeight(sub.position.x, sub.position.z) + 5;
-  if (sub.position.y < floor) {
-    sub.position.y = floor;
+  const floor = terrainHeight(diver.position.x, diver.position.z) + 5;
+  if (diver.position.y < floor) {
+    diver.position.y = floor;
     velocity.y = Math.max(0, velocity.y);
   }
-}
-
-function runAutopilot(delta) {
-  const target = targetMap.get(autoPilot.target);
-  const position = target.position;
-  const offsetDistance = autoPilot.mode === "circle" ? 56 : 34;
-  const toTarget = new THREE.Vector3().subVectors(position, sub.position);
-  const distance = toTarget.length();
-
-  if (autoPilot.mode === "circle") {
-    autoPilot.angle = (autoPilot.angle ?? 0) + delta * 0.48;
-    const orbitPosition = position
-      .clone()
-      .add(new THREE.Vector3(Math.cos(autoPilot.angle) * offsetDistance, 18, Math.sin(autoPilot.angle) * offsetDistance));
-    steerToward(orbitPosition, delta, 0.95);
-    lookToward(position, delta, 0.035);
-    return;
-  }
-
-  if (distance < offsetDistance) {
-    autoPilot = {
-      mode: "circle",
-      target: autoPilot.target,
-      angle: Math.atan2(sub.position.z - position.z, sub.position.x - position.x),
-    };
-    velocity.multiplyScalar(0.32);
-    return;
-  }
-
-  steerToward(position.clone().add(new THREE.Vector3(0, 14, 0)), delta, 1.22);
-  lookToward(position, delta, 0.03);
-}
-
-function steerToward(destination, delta, force) {
-  const desired = new THREE.Vector3().subVectors(destination, sub.position);
-  const distance = desired.length();
-  if (distance < 0.001) return;
-  desired.normalize().multiplyScalar(Math.min(118, 28 + distance * 0.34));
-  velocity.lerp(desired, THREE.MathUtils.clamp(delta * force, 0, 1));
-}
-
-function lookToward(destination, delta, force) {
-  const direction = new THREE.Vector3().subVectors(destination, sub.position).normalize();
-  const targetYaw = Math.atan2(-direction.x, -direction.z);
-  const targetPitch = Math.asin(direction.y);
-  yaw = lerpAngle(yaw, targetYaw, THREE.MathUtils.clamp(delta / force, 0, 1));
-  pitch = THREE.MathUtils.lerp(pitch, targetPitch, THREE.MathUtils.clamp(delta / force, 0, 1));
-}
-
-function updateEvents(elapsed, delta) {
-  if (!eventsEnabled) return;
-
-  if (!activeEvent && elapsed >= nextEventAt) {
-    if (Math.random() > 0.48) {
-      spawnCurrentSurge(elapsed);
-    } else {
-      spawnGlowBloom(elapsed);
-    }
-  }
-
-  if (!activeEvent) return;
-
-  if (activeEvent.type === "current") {
-    velocity.addScaledVector(activeEvent.direction, delta * activeEvent.force);
-    activeEvent.group.children.forEach((ribbon, index) => {
-      ribbon.position.addScaledVector(activeEvent.direction, delta * (12 + index));
-      ribbon.material.opacity = 0.08 + Math.sin(elapsed * 2 + index) * 0.03;
-    });
-  }
-
-  if (activeEvent.type === "bloom") {
-    activeEvent.group.rotation.y += delta * 0.28;
-    activeEvent.group.children.forEach((point, index) => {
-      point.position.y += Math.sin(elapsed * 1.4 + index) * delta * 0.8;
-    });
-  }
-
-  if (elapsed > activeEvent.expiresAt) {
-    clearActiveEvent();
-    scheduleNextEvent(elapsed);
-    setEventCard("해류 안정", "정상 잠항", "주변 흐름이 다시 안정되었습니다.");
-  }
-}
-
-function spawnCurrentSurge(elapsed) {
-  clearActiveEvent();
-  camera.getWorldDirection(forward);
-  right.set(1, 0, 0).applyQuaternion(sub.quaternion).normalize();
-  const direction = right.clone().multiplyScalar(Math.random() > 0.5 ? 1 : -1).addScaledVector(forward, -0.25).normalize();
-  const group = new THREE.Group();
-  group.position.copy(sub.position).addScaledVector(forward, 90);
-
-  const material = new THREE.MeshBasicMaterial({
-    color: 0x5ff2d0,
-    transparent: true,
-    opacity: 0.1,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-
-  for (let i = 0; i < 10; i += 1) {
-    const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(150, 5), material.clone());
-    ribbon.position.set((Math.random() - 0.5) * 120, (Math.random() - 0.5) * 56, (Math.random() - 0.5) * 120);
-    ribbon.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-    group.add(ribbon);
-  }
-
-  eventGroup.add(group);
-  activeEvent = { type: "current", group, direction, force: 16, expiresAt: elapsed + 12 };
-  setEventCard("해류 변화", "측면 해류", "강한 흐름이 선체를 옆으로 밀고 있습니다. 추진 방향을 조절해 항로를 유지하세요.");
-}
-
-function spawnGlowBloom(elapsed) {
-  clearActiveEvent();
-  camera.getWorldDirection(forward);
-  const group = new THREE.Group();
-  const origin = sub.position.clone().addScaledVector(forward, 120);
-  group.position.copy(origin);
-  const colors = [0x5ff2d0, 0xff9c78, 0xb8a4ff, 0x8fcf7d];
-
-  for (let i = 0; i < 150; i += 1) {
-    const point = new THREE.Mesh(
-      new THREE.SphereGeometry(0.45 + Math.random() * 1.1, 10, 8),
-      new THREE.MeshBasicMaterial({
-        color: colors[i % colors.length],
-        transparent: true,
-        opacity: 0.46,
-        blending: THREE.AdditiveBlending,
-      }),
-    );
-    point.position.set((Math.random() - 0.5) * 120, (Math.random() - 0.5) * 70, (Math.random() - 0.5) * 120);
-    group.add(point);
-  }
-
-  eventGroup.add(group);
-  activeEvent = { type: "bloom", group, expiresAt: elapsed + 16 };
-  setEventCard("발광 구름", "플랑크톤 밀집", "작은 빛들이 항로 주변으로 번지고 있습니다. 소나에는 잡음처럼 넓게 퍼집니다.");
-}
-
-function clearActiveEvent() {
-  if (!activeEvent) return;
-  eventGroup.remove(activeEvent.group);
-  activeEvent.group.traverse((object) => {
-    object.geometry?.dispose?.();
-    if (Array.isArray(object.material)) {
-      object.material.forEach((material) => material.dispose?.());
-    } else {
-      object.material?.dispose?.();
-    }
-  });
-  activeEvent = null;
-}
-
-function scheduleNextEvent(elapsed, minimumDelay = 9) {
-  nextEventAt = elapsed + minimumDelay + Math.random() * 14;
-}
-
-function updateHUD() {
-  const nearest = findNearestTarget();
-  const speed = velocity.length() * 0.34;
-  const depth = Math.max(0, Math.round(50 - sub.position.y));
-
-  if (nearest.id !== lastNearest) {
-    lastNearest = nearest.id;
-    if (!autoPilot && nearest.distance < 55) {
-      selectedTarget = nearest.id;
-      targetSelect.value = selectedTarget;
-      updateTargetCard();
-    }
-  }
-
-  speedReadout.textContent = `${speed.toFixed(1)} kn`;
-  depthReadout.textContent = `${depth.toLocaleString("ko-KR")} m`;
-  nearestReadout.textContent = nearest.ko;
-}
-
-function updateTargetCard() {
-  const target = targets.find((item) => item.id === selectedTarget);
-  if (!target) return;
-  targetType.textContent = target.type;
-  targetName.textContent = target.ko;
-  targetInfo.textContent = target.info;
-}
-
-function updateSonar(delta) {
-  sonarSweep = (sonarSweep + delta * 1.55) % (Math.PI * 2);
-  const width = sonarCanvas.width;
-  const height = sonarCanvas.height;
-  const center = width / 2;
-  const range = 480;
-  const selected = targetMap.get(selectedTarget);
-
-  sonarContext.clearRect(0, 0, width, height);
-  const gradient = sonarContext.createRadialGradient(center, center, 10, center, center, center);
-  gradient.addColorStop(0, "rgba(95, 242, 208, 0.08)");
-  gradient.addColorStop(1, "rgba(0, 7, 10, 0.92)");
-  sonarContext.fillStyle = gradient;
-  sonarContext.fillRect(0, 0, width, height);
-
-  sonarContext.strokeStyle = "rgba(148, 235, 224, 0.24)";
-  sonarContext.lineWidth = 1;
-  for (let r = 0.25; r <= 1; r += 0.25) {
-    sonarContext.beginPath();
-    sonarContext.arc(center, center, center * r - 6, 0, Math.PI * 2);
-    sonarContext.stroke();
-  }
-
-  sonarContext.strokeStyle = "rgba(148, 235, 224, 0.18)";
-  sonarContext.beginPath();
-  sonarContext.moveTo(center, 8);
-  sonarContext.lineTo(center, height - 8);
-  sonarContext.moveTo(8, center);
-  sonarContext.lineTo(width - 8, center);
-  sonarContext.stroke();
-
-  const sweepGradient = sonarContext.createRadialGradient(center, center, 0, center, center, center);
-  sweepGradient.addColorStop(0, "rgba(95, 242, 208, 0.22)");
-  sweepGradient.addColorStop(1, "rgba(95, 242, 208, 0)");
-  sonarContext.fillStyle = sweepGradient;
-  sonarContext.beginPath();
-  sonarContext.moveTo(center, center);
-  sonarContext.arc(center, center, center - 7, sonarSweep - 0.18, sonarSweep + 0.18);
-  sonarContext.closePath();
-  sonarContext.fill();
-
-  targets.forEach((target) => {
-    const dx = target.position.x - sub.position.x;
-    const dz = target.position.z - sub.position.z;
-    const distance = Math.hypot(dx, dz);
-    if (distance > range) return;
-    const x = center + (dx / range) * (center - 12);
-    const y = center + (dz / range) * (center - 12);
-    const isSelected = target.id === selectedTarget;
-    sonarContext.fillStyle = isSelected ? target.color : "rgba(238, 252, 255, 0.58)";
-    sonarContext.beginPath();
-    sonarContext.arc(x, y, isSelected ? 4.4 : 2.6, 0, Math.PI * 2);
-    sonarContext.fill();
-  });
-
-  if (game.state === "playing") {
-    game.pearls.forEach((pearl) => {
-      const dx = pearl.position.x - sub.position.x;
-      const dz = pearl.position.z - sub.position.z;
-      if (Math.hypot(dx, dz) > range) return;
-      sonarContext.fillStyle = "#ffe27a";
-      sonarContext.beginPath();
-      sonarContext.arc(center + (dx / range) * (center - 12), center + (dz / range) * (center - 12), 3.2, 0, Math.PI * 2);
-      sonarContext.fill();
-    });
-    game.jellies.forEach((jelly) => {
-      const dx = jelly.position.x - sub.position.x;
-      const dz = jelly.position.z - sub.position.z;
-      if (Math.hypot(dx, dz) > range) return;
-      sonarContext.fillStyle = "rgba(255, 150, 220, 0.85)";
-      sonarContext.beginPath();
-      sonarContext.arc(center + (dx / range) * (center - 12), center + (dz / range) * (center - 12), 2.4, 0, Math.PI * 2);
-      sonarContext.fill();
-    });
-  }
-
-  sonarContext.fillStyle = "#eefcff";
-  sonarContext.beginPath();
-  sonarContext.arc(center, center, 3.5, 0, Math.PI * 2);
-  sonarContext.fill();
-
-  const selectedDistance = selected ? selected.position.distanceTo(sub.position) : 0;
-  sonarTargetReadout.textContent = selected?.ko ?? "-";
-  sonarRangeReadout.textContent = `${range} m`;
-  sonarDistanceReadout.textContent = `${Math.round(selectedDistance).toLocaleString("ko-KR")} m`;
 }
 
 function sampleRender(elapsed) {
@@ -1925,57 +1439,15 @@ function sampleRender(elapsed) {
   try {
     const gl = renderer.getContext();
     const pixel = new Uint8Array(4);
-    const points = [
-      [0.5, 0.5],
-      [0.32, 0.42],
-      [0.68, 0.42],
-      [0.28, 0.62],
-      [0.72, 0.62],
-      [0.5, 0.3],
-      [0.5, 0.74],
-    ];
-    let luma = 0;
-
-    for (const [x, y] of points) {
-      gl.readPixels(
-        Math.floor(gl.drawingBufferWidth * x),
-        Math.floor(gl.drawingBufferHeight * y),
-        1,
-        1,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        pixel,
-      );
-      luma += pixel[0] + pixel[1] + pixel[2];
-    }
-
-    gl.readPixels(
-      Math.floor(gl.drawingBufferWidth / 2),
-      Math.floor(gl.drawingBufferHeight / 2),
-      1,
-      1,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      pixel,
-    );
+    gl.readPixels(Math.floor(gl.drawingBufferWidth / 2), Math.floor(gl.drawingBufferHeight / 2), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
     renderStatus.centerPixel = Array.from(pixel);
-    renderStatus.sampleLuma = luma;
+    renderStatus.sampleLuma = pixel[0] + pixel[1] + pixel[2];
     document.documentElement.dataset.oceanPixel = renderStatus.centerPixel.join(",");
-    document.documentElement.dataset.oceanLuma = String(renderStatus.sampleLuma);
     document.documentElement.dataset.oceanCalls = String(renderer.info.render.calls);
   } catch {
     renderStatus.webgl = false;
     document.documentElement.dataset.oceanWebgl = "false";
   }
-}
-
-function findNearestTarget() {
-  let nearest = null;
-  targetMap.forEach((target) => {
-    const distance = target.position.distanceTo(sub.position);
-    if (!nearest || distance < nearest.distance) nearest = { ...target, distance };
-  });
-  return nearest;
 }
 
 function terrainHeight(x, z) {
@@ -1986,261 +1458,6 @@ function terrainHeight(x, z) {
     Math.abs(Math.sin(x * 0.004) * Math.cos(z * 0.006)) * 54 +
     seaFloorBase
   );
-}
-
-function lerpAngle(a, b, t) {
-  const delta = ((((b - a) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-  return a + delta * t;
-}
-
-function setEventCard(type, name, info) {
-  eventType.textContent = type;
-  eventName.textContent = name;
-  eventInfo.textContent = info;
-}
-
-// ===== Pearl Rush 미니게임 =====
-const GAME_DURATION = 90;
-const PEARL_COUNT = 12;
-const JELLY_COUNT = 7;
-const PEARL_COLLECT_RANGE = 18;
-const JELLY_STING_RANGE = 14;
-
-function setupGameUI() {
-  gameBestReadout.textContent = `최고 ${game.best.toLocaleString("ko-KR")}점`;
-  gameButton.addEventListener("click", () => {
-    if (game.state === "playing") {
-      endGame("중단");
-    } else {
-      startGame();
-    }
-  });
-}
-
-function startGame() {
-  clearGameObjects();
-  game.state = "playing";
-  game.score = 0;
-  game.combo = 0;
-  game.lastCollectAt = -99;
-  game.timeLeft = GAME_DURATION;
-  game.stingCooldown = 0;
-
-  for (let i = 0; i < PEARL_COUNT; i += 1) {
-    const pearl = makePearl();
-    const x = (Math.random() - 0.5) * 760;
-    const z = (Math.random() - 0.5) * 760;
-    const floor = terrainHeight(x, z);
-    const y = floor + 24 + Math.random() * Math.max(30, -90 - floor - 24);
-    pearl.position.set(x, Math.min(y, -70), z);
-    pearl.userData.pearl = { phase: Math.random() * Math.PI * 2, popping: 0 };
-    gameGroup.add(pearl);
-    game.pearls.push(pearl);
-  }
-
-  for (let i = 0; i < JELLY_COUNT; i += 1) {
-    const jelly = makeJellyfish(3.4 + Math.random() * 2.4);
-    jelly.position.set((Math.random() - 0.5) * 640, -90 - Math.random() * 280, (Math.random() - 0.5) * 640);
-    jelly.userData.jelly = {
-      baseY: jelly.position.y,
-      phase: Math.random() * Math.PI * 2,
-      drift: 10 + Math.random() * 22,
-      speed: 0.4 + Math.random() * 0.5,
-    };
-    gameGroup.add(jelly);
-    game.jellies.push(jelly);
-  }
-
-  gameButton.textContent = "포기";
-  gameMessage.textContent = "빛나는 진주를 모으세요! 해파리에 닿으면 시간이 줄어듭니다.";
-  updateGameHUD();
-}
-
-function endGame(reason) {
-  const collected = PEARL_COUNT - game.pearls.length;
-  if (reason === "완주") {
-    game.score += Math.round(game.timeLeft) * 10;
-  }
-  game.state = "over";
-  game.timeLeft = Math.max(0, game.timeLeft);
-
-  if (game.score > game.best) {
-    game.best = game.score;
-    localStorage.setItem("pearlRushBest", String(game.best));
-    gameBestReadout.textContent = `최고 ${game.best.toLocaleString("ko-KR")}점`;
-    gameMessage.textContent = `신기록! ${game.score.toLocaleString("ko-KR")}점 (진주 ${collected}/${PEARL_COUNT})`;
-  } else if (reason === "완주") {
-    gameMessage.textContent = `진주를 전부 모았습니다! ${game.score.toLocaleString("ko-KR")}점`;
-  } else if (reason === "시간 종료") {
-    gameMessage.textContent = `시간 종료! ${game.score.toLocaleString("ko-KR")}점 (진주 ${collected}/${PEARL_COUNT})`;
-  } else {
-    gameMessage.textContent = `게임 중단. ${game.score.toLocaleString("ko-KR")}점`;
-  }
-
-  gameButton.textContent = "다시 시작";
-  clearGameObjects();
-  updateGameHUD();
-}
-
-function clearGameObjects() {
-  [...game.pearls, ...game.jellies].forEach((object) => {
-    gameGroup.remove(object);
-    object.traverse((child) => {
-      child.geometry?.dispose?.();
-      if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose?.());
-      else child.material?.dispose?.();
-    });
-  });
-  game.pearls = [];
-  game.jellies = [];
-}
-
-function makePearl() {
-  const group = new THREE.Group();
-  const orb = new THREE.Mesh(
-    new THREE.SphereGeometry(3.4, 20, 14),
-    toonMat({ color: 0xfff3d0, emissive: 0xc9a23f, emissiveIntensity: 0.55 }),
-  );
-  const halo = new THREE.Mesh(
-    new THREE.RingGeometry(4.6, 6, 26),
-    new THREE.MeshBasicMaterial({
-      color: 0xffe9a3,
-      transparent: true,
-      opacity: 0.5,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    }),
-  );
-  const sparkle = new THREE.Sprite(makeSparkleMaterial());
-  sparkle.scale.setScalar(7);
-  sparkle.position.y = 4.5;
-  group.add(orb, halo, sparkle);
-  group.userData.halo = halo;
-  group.userData.sparkle = sparkle;
-  addCartoonOutline(orb, 1.1, 0x8a6a23, 1);
-  return group;
-}
-
-function makeJellyfish(size) {
-  const group = new THREE.Group();
-  const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(size, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2),
-    toonMat({ color: 0xf2a0d8, emissive: 0x8e3a78, emissiveIntensity: 0.45 }),
-  );
-  dome.scale.y = 0.78;
-  const skirt = new THREE.Mesh(
-    new THREE.ConeGeometry(size * 0.96, size * 0.7, 18, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: 0xffc4ec,
-      transparent: true,
-      opacity: 0.42,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    }),
-  );
-  skirt.position.y = -size * 0.3;
-  skirt.rotation.x = Math.PI;
-  group.add(dome, skirt);
-
-  const tentacleMaterial = new THREE.LineBasicMaterial({ color: 0xffb7e6, transparent: true, opacity: 0.7 });
-  for (let i = 0; i < 6; i += 1) {
-    const angle = (i / 6) * Math.PI * 2;
-    const points = [];
-    for (let j = 0; j <= 6; j += 1) {
-      const t = j / 6;
-      points.push(
-        new THREE.Vector3(
-          Math.cos(angle) * size * 0.5 + Math.sin(t * Math.PI * 2 + i) * 0.5,
-          -t * size * 2.4,
-          Math.sin(angle) * size * 0.5,
-        ),
-      );
-    }
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), tentacleMaterial.clone()));
-  }
-  group.userData.dome = dome;
-  addCartoonOutline(dome, 1.07, 0x7c2f6b, 1);
-  return group;
-}
-
-function updateGame(elapsed, delta) {
-  if (game.state !== "playing") return;
-
-  game.timeLeft -= delta;
-  game.stingCooldown = Math.max(0, game.stingCooldown - delta);
-  if (game.timeLeft <= 0) {
-    endGame("시간 종료");
-    return;
-  }
-
-  for (let i = game.pearls.length - 1; i >= 0; i -= 1) {
-    const pearl = game.pearls[i];
-    const data = pearl.userData.pearl;
-
-    if (data.popping > 0) {
-      data.popping -= delta;
-      pearl.scale.setScalar(Math.max(0.01, data.popping / 0.3) * 1.4);
-      if (data.popping <= 0) {
-        gameGroup.remove(pearl);
-        game.pearls.splice(i, 1);
-        if (game.pearls.length === 0) {
-          endGame("완주");
-          return;
-        }
-      }
-      continue;
-    }
-
-    pearl.rotation.y = elapsed * 0.8 + data.phase;
-    pearl.position.y += Math.sin(elapsed * 1.3 + data.phase) * delta * 1.6;
-    pearl.userData.halo.rotation.z = elapsed * 0.9 + data.phase;
-    pearl.userData.halo.quaternion.copy(camera.quaternion);
-    pearl.userData.sparkle.material.opacity = 0.45 + Math.sin(elapsed * 3 + data.phase) * 0.35;
-
-    if (pearl.position.distanceTo(sub.position) < PEARL_COLLECT_RANGE) {
-      const comboAlive = elapsed - game.lastCollectAt < 6;
-      game.combo = comboAlive ? game.combo + 1 : 1;
-      game.lastCollectAt = elapsed;
-      game.score += 100 * game.combo;
-      game.timeLeft = Math.min(GAME_DURATION, game.timeLeft + 3);
-      data.popping = 0.3;
-      spawnRipple(pearl.position, { size: 14, strength: 0.9, color: 0xffe27a });
-      spawnRipple(pearl.position, { size: 9, strength: 0.7, color: 0xffffff, delay: 0.12 });
-      gameMessage.textContent =
-        game.combo > 1
-          ? `콤보 x${game.combo}! +${(100 * game.combo).toLocaleString("ko-KR")}점 (+3초)`
-          : "진주 획득! +100점 (+3초)";
-    }
-  }
-
-  game.jellies.forEach((jelly) => {
-    const data = jelly.userData.jelly;
-    jelly.position.y = data.baseY + Math.sin(elapsed * data.speed + data.phase) * data.drift;
-    const pulse = 1 + Math.sin(elapsed * 2.2 + data.phase) * 0.1;
-    jelly.userData.dome.scale.set(pulse, 0.78 * (2 - pulse), pulse);
-
-    if (game.stingCooldown <= 0 && jelly.position.distanceTo(sub.position) < JELLY_STING_RANGE) {
-      game.timeLeft -= 8;
-      game.combo = 0;
-      game.stingCooldown = 1.6;
-      const away = sub.position.clone().sub(jelly.position).normalize();
-      velocity.addScaledVector(away, 55);
-      spawnRipple(jelly.position, { size: 16, strength: 0.9, color: 0xff9ad8 });
-      stingFlash.classList.remove("active");
-      void stingFlash.offsetWidth;
-      stingFlash.classList.add("active");
-      gameMessage.textContent = "해파리에 쏘였습니다! -8초";
-    }
-  });
-
-  updateGameHUD();
-}
-
-function updateGameHUD() {
-  gameScoreReadout.textContent = game.score.toLocaleString("ko-KR");
-  gameTimeReadout.textContent = `${Math.max(0, Math.ceil(game.timeLeft))}s`;
-  gamePearlsReadout.textContent =
-    game.state === "playing" ? `${PEARL_COUNT - game.pearls.length}/${PEARL_COUNT}` : "-";
 }
 
 window.addEventListener("resize", () => {
