@@ -37,8 +37,8 @@ const stingFlash = document.getElementById("stingFlash");
 
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x6fd6f5);
-scene.fog = new THREE.FogExp2(0x70d2ef, 0.0019);
+scene.background = new THREE.Color(0x86e6c2);
+scene.fog = new THREE.FogExp2(0x73dcb8, 0.0017);
 
 const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 4200);
 camera.position.set(0, 0, 0);
@@ -52,7 +52,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.52;
+renderer.toneMappingExposure = 1.22;
 
 const sub = new THREE.Object3D();
 sub.position.set(-170, -28, 150);
@@ -196,12 +196,15 @@ function toonMat({ color, emissive = 0x000000, emissiveIntensity = 0 }) {
 
 let waterUniforms = null;
 let backdropGroup = null;
+let lightShaftGroup = null;
+let bubbleField = null;
 const causticTextures = [];
 const ripplePool = [];
 const activeRipples = [];
 let nextWakeAt = 0;
-const shallowBackground = new THREE.Color(0x7fdcf5);
-const deepBackground = new THREE.Color(0x1d6f9c);
+const shallowBackground = new THREE.Color(0x9ff0cf);
+const midBackground = new THREE.Color(0x5fcfa6);
+const deepBackground = new THREE.Color(0x2b9b86);
 const surfaceRaycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 const surfacePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -48);
@@ -233,11 +236,11 @@ resetDive();
 animate();
 
 function setupLights() {
-  scene.add(new THREE.AmbientLight(0xd9fff5, 0.68));
-  scene.add(new THREE.HemisphereLight(0xeafff9, 0x5db9b5, 1.24));
+  scene.add(new THREE.AmbientLight(0xe6fff0, 0.74));
+  scene.add(new THREE.HemisphereLight(0xfcffe4, 0x4fc59a, 1.32));
 
-  const surfaceLight = new THREE.DirectionalLight(0xfff1bf, 2.65);
-  surfaceLight.position.set(-130, 180, 80);
+  const surfaceLight = new THREE.DirectionalLight(0xfff0c2, 2.2);
+  surfaceLight.position.set(-120, 220, -120);
   scene.add(surfaceLight);
 
   const subLight = new THREE.SpotLight(0xf4fff2, 3.4, 300, Math.PI / 7.5, 0.82, 1.2);
@@ -258,6 +261,80 @@ function setupSeascape() {
   scene.add(makeCartoonWaterDetails());
   scene.add(makeDistantHaze());
   scene.add(makeTerrainRocks());
+  scene.add(makeBubbleField());
+}
+
+function makeBubbleField() {
+  const group = new THREE.Group();
+  const bubbleTexture = makeBubbleTexture();
+  const count = reducedMotion ? 70 : 130;
+  const bubbleMaterial = new THREE.SpriteMaterial({
+    map: bubbleTexture,
+    transparent: true,
+    depthWrite: false,
+    opacity: 0.7,
+  });
+
+  const bubbles = [];
+  for (let i = 0; i < count; i += 1) {
+    const bubble = new THREE.Sprite(bubbleMaterial.clone());
+    const base = {
+      x: (Math.random() - 0.5) * 1500,
+      z: (Math.random() - 0.5) * 1500,
+      y: -480 + Math.random() * 520,
+      speed: 8 + Math.random() * 22,
+      sway: 6 + Math.random() * 14,
+      phase: Math.random() * Math.PI * 2,
+      scale: 1.2 + Math.random() * 2.8,
+    };
+    bubble.position.set(base.x, base.y, base.z);
+    bubble.scale.setScalar(base.scale);
+    bubble.material.opacity = 0.3 + Math.random() * 0.45;
+    bubble.userData.bubble = base;
+    bubbles.push(bubble);
+    group.add(bubble);
+  }
+
+  group.userData.bubbles = bubbles;
+  bubbleField = group;
+  return group;
+}
+
+function makeBubbleTexture() {
+  const bubbleCanvas = document.createElement("canvas");
+  bubbleCanvas.width = 64;
+  bubbleCanvas.height = 64;
+  const context = bubbleCanvas.getContext("2d");
+  context.clearRect(0, 0, 64, 64);
+  context.strokeStyle = "rgba(255, 255, 255, 0.85)";
+  context.lineWidth = 2.4;
+  context.beginPath();
+  context.arc(32, 32, 24, 0, Math.PI * 2);
+  context.stroke();
+  const highlight = context.createRadialGradient(24, 22, 1, 24, 22, 12);
+  highlight.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+  highlight.addColorStop(1, "rgba(255, 255, 255, 0)");
+  context.fillStyle = highlight;
+  context.beginPath();
+  context.arc(24, 22, 12, 0, Math.PI * 2);
+  context.fill();
+  const texture = new THREE.CanvasTexture(bubbleCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function updateBubbles(elapsed, delta) {
+  const scaledDelta = delta * motionScale;
+  bubbleField.userData.bubbles.forEach((bubble) => {
+    const data = bubble.userData.bubble;
+    bubble.position.y += data.speed * scaledDelta;
+    bubble.position.x = data.x + Math.sin(elapsed * 0.5 + data.phase) * data.sway;
+    if (bubble.position.y > 52) {
+      bubble.position.y = -480;
+      data.x = (Math.random() - 0.5) * 1500;
+      bubble.position.z = (Math.random() - 0.5) * 1500;
+    }
+  });
 }
 
 function makePaintedBackdrop() {
@@ -268,11 +345,11 @@ function makePaintedBackdrop() {
   gradientCanvas.height = 512;
   const context = gradientCanvas.getContext("2d");
   const gradient = context.createLinearGradient(0, 0, 0, 512);
-  gradient.addColorStop(0, "#d8f6ff");
-  gradient.addColorStop(0.34, "#f2fdff");
-  gradient.addColorStop(0.46, "#9bebee");
-  gradient.addColorStop(0.7, "#4cc4e2");
-  gradient.addColorStop(1, "#2f93c4");
+  gradient.addColorStop(0, "#e2fbef");
+  gradient.addColorStop(0.32, "#f4fff4");
+  gradient.addColorStop(0.46, "#a8f2d6");
+  gradient.addColorStop(0.7, "#57d0ad");
+  gradient.addColorStop(1, "#33a888");
   context.fillStyle = gradient;
   context.fillRect(0, 0, 8, 512);
   const gradientTexture = new THREE.CanvasTexture(gradientCanvas);
@@ -407,10 +484,10 @@ function makeWaterSurface() {
   const geometry = new THREE.PlaneGeometry(2400, 2400, 108, 108);
   waterUniforms = {
     uTime: { value: 0 },
-    uShallow: { value: new THREE.Color(0x8df2e4) },
-    uMid: { value: new THREE.Color(0x3ecbd8) },
-    uDeep: { value: new THREE.Color(0x2496c9) },
-    uSky: { value: new THREE.Color(0xcdf2ff) },
+    uShallow: { value: new THREE.Color(0xb6f5d8) },
+    uMid: { value: new THREE.Color(0x5fdcc0) },
+    uDeep: { value: new THREE.Color(0x36b89e) },
+    uSky: { value: new THREE.Color(0xeafbe8) },
     uSun: { value: new THREE.Vector3(-0.42, 0.78, 0.34).normalize() },
   };
 
@@ -546,23 +623,49 @@ function updateRipples(delta) {
 
 function makeLightShafts() {
   const group = new THREE.Group();
-  const material = new THREE.MeshBasicMaterial({
-    color: 0xfff6cf,
-    transparent: true,
-    opacity: 0.062,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
+  // 포뇨풍 빛기둥: 수면에서 살짝 부채꼴로 퍼지며 거의 수직으로 내려오는 따뜻한 광선.
+  // 크림/노랑/연분홍/연민트 색조를 섞어 무지개빛 감성을 더한다.
+  const shaftColors = [0xfff4cf, 0xfdebbf, 0xffe6ea, 0xeaffd9, 0xfff0d2];
+  const ringCount = 22;
 
-  for (let i = 0; i < 18; i += 1) {
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(18, 86, 680, 18, 1, true), material);
-    shaft.position.set((Math.random() - 0.5) * 1200, -190, (Math.random() - 0.5) * 1200);
-    shaft.rotation.z = (Math.random() - 0.5) * 0.28;
-    shaft.rotation.x = (Math.random() - 0.5) * 0.18;
+  for (let i = 0; i < ringCount; i += 1) {
+    const color = shaftColors[i % shaftColors.length];
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(10 + Math.random() * 14, 34 + Math.random() * 30, 900, 24, 1, true),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.028 + Math.random() * 0.03,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      }),
+    );
+
+    // 수면(y≈60) 근처에서 시작해 바닥을 향해 살짝만 벌어지게 배치.
+    const angle = (i / ringCount) * Math.PI * 2 + Math.random() * 0.3;
+    const startRadius = 80 + Math.random() * 540;
+    const top = new THREE.Vector3(
+      -120 + Math.cos(angle) * startRadius,
+      80,
+      -160 + Math.sin(angle) * startRadius * 0.85,
+    );
+    const floorTarget = top.clone().add(
+      new THREE.Vector3((Math.random() - 0.5) * 120, -760, (Math.random() - 0.5) * 120),
+    );
+    const mid = top.clone().lerp(floorTarget, 0.5);
+    shaft.position.copy(mid);
+    shaft.lookAt(floorTarget);
+    shaft.rotateX(Math.PI / 2);
+    shaft.userData.shaft = {
+      phase: Math.random() * Math.PI * 2,
+      baseOpacity: shaft.material.opacity,
+    };
     group.add(shaft);
   }
 
+  lightShaftGroup = group;
   return group;
 }
 
@@ -941,8 +1044,10 @@ function setupPlankton() {
 }
 
 function setupMarineLife() {
-  for (let i = 0; i < 42; i += 1) {
-    const fish = makeFish(0.8 + Math.random() * 1.7, i % 5 === 0 ? 0xff9c78 : 0x77d7c8);
+  // 니모풍 산호색·청록·남색 물고기 떼.
+  const fishPalette = [0xff8a5c, 0xffb347, 0xff6f61, 0x5fd6c0, 0x4aa3d9, 0x3b6fb0, 0xffd27a];
+  for (let i = 0; i < 64; i += 1) {
+    const fish = makeFish(0.7 + Math.random() * 1.7, fishPalette[Math.floor(Math.random() * fishPalette.length)]);
     fish.userData.modelKind = "fish";
     placeSwimmer(fish, {
       radius: 120 + Math.random() * 560,
@@ -1405,18 +1510,31 @@ function updateWaterStyle(elapsed, delta) {
   });
 
   const depthT = THREE.MathUtils.clamp((-sub.position.y - 20) / 460, 0, 1);
-  scene.background.lerpColors(shallowBackground, deepBackground, depthT);
+  if (depthT < 0.5) {
+    scene.background.lerpColors(shallowBackground, midBackground, depthT / 0.5);
+  } else {
+    scene.background.lerpColors(midBackground, deepBackground, (depthT - 0.5) / 0.5);
+  }
   scene.fog.color.copy(scene.background);
-  scene.fog.density = 0.0017 + depthT * 0.0011;
+  scene.fog.density = 0.0015 + depthT * 0.0009;
 
   if (backdropGroup) {
-    const fade = 1 - depthT * 0.88;
+    const fade = 1 - depthT * 0.72;
     backdropGroup.children.forEach((child) => {
       if (child.userData.baseOpacity !== undefined) {
         child.material.opacity = child.userData.baseOpacity * fade;
       }
     });
   }
+
+  if (lightShaftGroup) {
+    lightShaftGroup.children.forEach((shaft) => {
+      const data = shaft.userData.shaft;
+      shaft.material.opacity = data.baseOpacity * (0.6 + Math.sin(elapsed * 0.6 + data.phase) * 0.4);
+    });
+  }
+
+  if (bubbleField) updateBubbles(elapsed, delta);
 
   if (sub.position.y > 14 && velocity.length() > 14 && elapsed > nextWakeAt) {
     nextWakeAt = elapsed + 0.55;
