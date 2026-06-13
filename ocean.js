@@ -30,12 +30,19 @@ const EXPOSURE = 1.18;
 
 // 잠수자(1인칭 카메라 리그). 자유롭게 헤엄치며 만화 바다를 둘러본다.
 const diver = new THREE.Object3D();
-const spawnPosition = new THREE.Vector3(60, -150, 150);
-const spawnYaw = 0.16;
-const spawnPitch = -0.3;
+const spawnPosition = new THREE.Vector3(150, -126, 215);
+const spawnYaw = 0.58;
+const spawnPitch = -0.16;
 diver.position.copy(spawnPosition);
 scene.add(diver);
 diver.add(camera);
+
+// 헤엄치는 감각용 상태: 머리 흔들림(camBob), 몸 기울임(roll), 전경 입자 흐름.
+const camBob = { current: new THREE.Vector3(), target: new THREE.Vector3() };
+let rollCurrent = 0;
+let driftField = null;
+const kelpForests = [];
+const DRIFT_RANGE = 220;
 
 const velocity = new THREE.Vector3();
 const forward = new THREE.Vector3();
@@ -67,16 +74,40 @@ const renderStatus = { frame: 0, centerPixel: [0, 0, 0, 0], sampleLuma: 0, lastS
 window.__oceanStatus = renderStatus;
 document.documentElement.dataset.oceanReady = "1";
 
+// 탐험 구역 — 각 구역은 색만이 아니라 오브젝트 밀도·생물 움직임·빛·입자 흐름이 다르다.
+// A 얕은 산호 정원, B 해초 숲, C 물고기 떼의 길, D 해파리·빛기둥 고요한 공간,
+// E 산호 마을, F 심해 동굴 입구.
+const ZONES = {
+  garden: new THREE.Vector3(60, -156, 90),
+  kelp: new THREE.Vector3(250, -206, -70),
+  schoolPath: new THREE.Vector3(-30, -210, -250),
+  jellies: new THREE.Vector3(-250, -244, -30),
+  town: new THREE.Vector3(-40, -250, -190),
+  caveDeep: new THREE.Vector3(-300, -430, 250),
+};
+
 // 만화 바다 속 풍경(랜드마크). 목표/계기판이 아니라 "둘러보는 대상".
 const sceneryPieces = [
-  { build: makeCoralTown, position: new THREE.Vector3(-30, -248, -150), outline: false },
-  { build: makeCoralGate, position: new THREE.Vector3(-190, -236, 70) },
-  { build: makeKelpForest, position: new THREE.Vector3(150, -208, -40) },
-  { build: makeKelpForest, position: new THREE.Vector3(60, -214, 120) },
-  { build: makeShipwreck, position: new THREE.Vector3(250, -286, 150) },
-  { build: makeVentSpire, position: new THREE.Vector3(-260, -392, -235) },
-  { build: makeGlassTrench, position: new THREE.Vector3(-320, -455, 80) },
-  { build: makeAbyssArch, position: new THREE.Vector3(70, -420, 300) },
+  // A. 얕은 에메랄드 산호 정원 — 스폰 정면 중경. 밝고 알록달록, 작은 물고기.
+  { build: makeCoralGarden, position: ZONES.garden.clone() },
+  // B. 천천히 흔들리는 해초 숲.
+  { build: makeKelpForest, position: ZONES.kelp.clone() },
+  { build: makeKelpForest, position: ZONES.kelp.clone().add(new THREE.Vector3(70, 4, 60)) },
+  // E. 산호 마을(원경 랜드마크).
+  { build: makeCoralTown, position: ZONES.town.clone(), outline: false },
+  { build: makeCoralGate, position: ZONES.town.clone().add(new THREE.Vector3(120, 12, 80)) },
+  // D. 해파리·빛기둥 공간 주변의 바위 정원.
+  { build: makeBoulderField, position: ZONES.jellies.clone().add(new THREE.Vector3(40, -6, 40)) },
+  // 곳곳의 난파선/지형.
+  { build: makeShipwreck, position: new THREE.Vector3(250, -286, 170) },
+  { build: makeVentSpire, position: new THREE.Vector3(-240, -392, -235) },
+  { build: makeGlassTrench, position: new THREE.Vector3(-330, -452, 60) },
+  // F. 심해 동굴 입구 — 어둑한 원경 랜드마크.
+  { build: makeCaveEntrance, position: ZONES.caveDeep.clone(), outline: false },
+  { build: makeAbyssArch, position: new THREE.Vector3(90, -420, 300) },
+  // 전경 실루엣 — 스폰 카메라 바로 앞을 스쳐 지나는 큰 해초.
+  { build: makeForegroundKelp, position: new THREE.Vector3(118, -150, 168) },
+  { build: makeForegroundKelp, position: new THREE.Vector3(176, -150, 150) },
 ];
 
 const marineLifeGroup = new THREE.Group();
@@ -272,8 +303,9 @@ function setupPostFX() {
 }
 
 // 후처리 셰이더/리소스 정의가 끝난 뒤 초기화하고 렌더 루프를 시작한다.
+// 첫 프레임은 rAF로 미뤄, 모듈 평가가 끝나 모든 상수가 초기화된 뒤 tick이 돌게 한다.
 setupPostFX();
-animate();
+requestAnimationFrame(animate);
 
 function setupLights() {
   scene.add(new THREE.AmbientLight(0xe6fff0, 0.74));
@@ -302,6 +334,91 @@ function setupSeascape() {
   scene.add(makeDistantHaze());
   scene.add(makeTerrainRocks());
   scene.add(makeBubbleField());
+  scene.add(makeDriftField());
+}
+
+// 잠수자를 둘러싼 부유 입자(마린스노우). 이동하면 그 자리에 머물러 있다가
+// 뒤로 흘러가므로 "물속을 헤치고 지나간다"는 감각을 만든다. 가까운 입자는
+// 크게(원근 감쇠) 보여 전경/중경 깊이감을 더한다.
+function makeDriftField() {
+  const count = reducedMotion ? 280 : 620;
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sink = new Float32Array(count);
+  const warm = new THREE.Color("#fff2c8");
+  const mint = new THREE.Color("#cffae8");
+  for (let i = 0; i < count; i += 1) {
+    positions[i * 3] = (Math.random() - 0.5) * DRIFT_RANGE;
+    positions[i * 3 + 1] = (Math.random() - 0.5) * DRIFT_RANGE;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * DRIFT_RANGE;
+    const c = warm.clone().lerp(mint, Math.random());
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+    sink[i] = 1.4 + Math.random() * 2.6;
+  }
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const points = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      map: makeSoftDotTexture(),
+      size: 2.4,
+      sizeAttenuation: true,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  points.userData.sink = sink;
+  points.frustumCulled = false;
+  driftField = points;
+  return points;
+}
+
+function makeSoftDotTexture() {
+  const dot = document.createElement("canvas");
+  dot.width = 32;
+  dot.height = 32;
+  const context = dot.getContext("2d");
+  const gradient = context.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.5, "rgba(255,255,255,0.5)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 32, 32);
+  const texture = new THREE.CanvasTexture(dot);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function updateDriftField(delta, elapsed) {
+  if (!driftField) return;
+  const positions = driftField.geometry.attributes.position.array;
+  const sink = driftField.userData.sink;
+  const half = DRIFT_RANGE / 2;
+  // 잠수자 이동량을 상쇄해 입자를 월드에 고정 → 헤엄치면 뒤로 흘러간다.
+  const dx = velocity.x * delta;
+  const dy = velocity.y * delta;
+  const dz = velocity.z * delta;
+  const scaledDelta = delta * motionScale;
+  for (let i = 0; i < sink.length; i += 1) {
+    const j = i * 3;
+    positions[j] -= dx + Math.sin(elapsed * 0.4 + i) * scaledDelta * 0.6;
+    positions[j + 1] -= dy + sink[i] * scaledDelta;
+    positions[j + 2] -= dz;
+    if (positions[j] > half) positions[j] -= DRIFT_RANGE;
+    else if (positions[j] < -half) positions[j] += DRIFT_RANGE;
+    if (positions[j + 1] > half) positions[j + 1] -= DRIFT_RANGE;
+    else if (positions[j + 1] < -half) positions[j + 1] += DRIFT_RANGE;
+    if (positions[j + 2] > half) positions[j + 2] -= DRIFT_RANGE;
+    else if (positions[j + 2] < -half) positions[j + 2] += DRIFT_RANGE;
+  }
+  driftField.geometry.attributes.position.needsUpdate = true;
+  driftField.position.copy(diver.position);
 }
 
 function makeBubbleField() {
@@ -365,14 +482,22 @@ function makeBubbleTexture() {
 
 function updateBubbles(elapsed, delta) {
   const scaledDelta = delta * motionScale;
+  // 가속할수록 버블이 뒤로 더 빨리 흐른다(지나가는 느낌).
+  const streamX = velocity.x * delta * 0.35;
+  const streamZ = velocity.z * delta * 0.35;
   bubbleField.userData.bubbles.forEach((bubble) => {
     const data = bubble.userData.bubble;
+    data.x -= streamX;
+    bubble.position.z -= streamZ;
     bubble.position.y += data.speed * scaledDelta;
     bubble.position.x = data.x + Math.sin(elapsed * 0.5 + data.phase) * data.sway;
-    if (bubble.position.y > 52) {
-      bubble.position.y = -480;
-      data.x = (Math.random() - 0.5) * 1500;
-      bubble.position.z = (Math.random() - 0.5) * 1500;
+    // 잠수자에게서 너무 멀어지면 주변으로 재배치해 항상 버블이 흐르게 한다.
+    const dx = bubble.position.x - diver.position.x;
+    const dz = bubble.position.z - diver.position.z;
+    if (bubble.position.y > 52 || dx * dx + dz * dz > 820 * 820) {
+      bubble.position.y = diver.position.y - 240 - Math.random() * 200;
+      data.x = diver.position.x + (Math.random() - 0.5) * 1200;
+      bubble.position.z = diver.position.z + (Math.random() - 0.5) * 1200;
     }
   });
 }
@@ -933,27 +1058,125 @@ function makeCoralGate(group) {
   }
 }
 
-function makeKelpForest(group) {
+function makeKelpForest(group, options = {}) {
+  const count = options.count ?? 52;
+  const heightBase = options.heightBase ?? 28;
+  const heightVar = options.heightVar ?? 48;
+  const spread = options.spread ?? 86;
   const stalkMaterial = toonMat({ color: 0x3f9a4f, emissive: 0x123a18, emissiveIntensity: 0.35 });
   const leafMaterial = new THREE.MeshBasicMaterial({ color: 0x2f8a3e, transparent: true, opacity: 0.82, side: THREE.DoubleSide });
+  const center = group.position.clone();
+  const parts = [];
 
-  for (let i = 0; i < 52; i += 1) {
-    const height = 28 + Math.random() * 48;
+  for (let i = 0; i < count; i += 1) {
+    const height = heightBase + Math.random() * heightVar;
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.7, height, 8), stalkMaterial);
-    stalk.position.set((Math.random() - 0.5) * 86, height / 2 - 18, (Math.random() - 0.5) * 58);
+    stalk.position.set((Math.random() - 0.5) * spread, height / 2 - 18, (Math.random() - 0.5) * (spread * 0.7));
     stalk.rotation.z = (Math.random() - 0.5) * 0.22;
-    stalk.userData.wavePhase = Math.random() * Math.PI * 2;
-    swayingParts.push(stalk);
     group.add(stalk);
+    registerSway(stalk, center, Math.random() * Math.PI * 2, 0.1, parts);
 
     for (let j = 0; j < 3; j += 1) {
       const leaf = new THREE.Mesh(new THREE.PlaneGeometry(4, 12), leafMaterial);
       leaf.position.set(stalk.position.x + (Math.random() - 0.5) * 5, stalk.position.y + height * (0.1 + j * 0.18), stalk.position.z);
       leaf.rotation.set(Math.random() * 0.5, Math.random() * Math.PI, (Math.random() - 0.5) * 0.8);
-      leaf.userData.wavePhase = stalk.userData.wavePhase + j;
-      swayingParts.push(leaf);
       group.add(leaf);
+      registerSway(leaf, center, Math.random() * Math.PI * 2, 0.16, parts);
     }
+  }
+
+  kelpForests.push({ center, parts });
+}
+
+// 전경 실루엣용 큰 해초 — 카메라 바로 앞을 스쳐 지나며 깊이감을 만든다.
+function makeForegroundKelp(group) {
+  makeKelpForest(group, { count: 9, heightBase: 60, heightVar: 70, spread: 34 });
+}
+
+function registerSway(part, center, phase, amp, bucket) {
+  part.userData.swayBaseZ = part.rotation.z;
+  const entry = { part, center, phase, amp };
+  swayingParts.push(entry);
+  bucket?.push(entry);
+}
+
+// A. 얕은 에메랄드 산호 정원 — 둥근 뇌산호, 가지산호, 부채산호, 말미잘이 빽빽한 밝은 정원.
+function makeCoralGarden(group) {
+  const palette = [0xff8a70, 0xff6f9c, 0xffd27a, 0x8a7bff, 0x5fd6c0, 0xff9ad8, 0xffb347, 0x7ee0a6];
+  const mound = new THREE.Mesh(
+    new THREE.SphereGeometry(46, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+    toonMat({ color: 0xf3e0a4, emissive: 0x8c7236, emissiveIntensity: 0.18 }),
+  );
+  mound.scale.y = 0.4;
+  mound.position.y = -18;
+  group.add(mound);
+
+  for (let i = 0; i < 60; i += 1) {
+    const c = palette[i % palette.length];
+    const mat = toonMat({ color: c, emissive: new THREE.Color(c).multiplyScalar(0.22), emissiveIntensity: 0.3 });
+    const kind = Math.random();
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 52;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    const baseY = -16 + Math.random() * 6;
+    let coral;
+    if (kind < 0.4) {
+      coral = new THREE.Mesh(new THREE.ConeGeometry(1 + Math.random() * 2, 6 + Math.random() * 12, 6), mat);
+      coral.position.set(x, baseY + 4, z);
+      coral.rotation.set((Math.random() - 0.5) * 0.4, Math.random() * Math.PI, (Math.random() - 0.5) * 0.4);
+    } else if (kind < 0.7) {
+      coral = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4 + Math.random() * 3.4, 0), mat); // 뇌산호 덩어리
+      coral.position.set(x, baseY + 1, z);
+    } else {
+      coral = new THREE.Mesh(new THREE.TorusGeometry(3 + Math.random() * 3, 0.7, 6, 16, Math.PI * 1.3), mat); // 부채산호
+      coral.position.set(x, baseY + 4, z);
+      coral.rotation.set(Math.PI / 2, Math.random() * Math.PI, 0);
+      registerSway(coral, group.position.clone(), Math.random() * Math.PI * 2, 0.05);
+    }
+    group.add(coral);
+  }
+}
+
+// 큰 바위 무리 — 중경/원경의 덩어리감.
+function makeBoulderField(group) {
+  const material = toonMat({ color: 0x86b7d6, emissive: 0x2c5d80, emissiveIntensity: 0.14 });
+  for (let i = 0; i < 14; i += 1) {
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(10 + Math.random() * 22, 0), material);
+    rock.position.set((Math.random() - 0.5) * 130, -18 + Math.random() * 16, (Math.random() - 0.5) * 130);
+    rock.scale.set(1.1 + Math.random() * 1.4, 0.7 + Math.random() * 1.2, 1.1 + Math.random() * 1.4);
+    rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+    group.add(rock);
+  }
+}
+
+// F. 심해 동굴 입구 — 어둑한 아치와 깊은 어둠, 둘러싼 큰 바위들.
+function makeCaveEntrance(group) {
+  const rockMaterial = toonMat({ color: 0x4a6470, emissive: 0x16242b, emissiveIntensity: 0.16 });
+  const cliff = new THREE.Mesh(new THREE.SphereGeometry(80, 20, 16, 0, Math.PI * 2, 0, Math.PI / 2), rockMaterial);
+  cliff.scale.set(1, 1.1, 0.7);
+  cliff.position.y = 12;
+  group.add(cliff);
+
+  // 어두운 동굴 입구(안쪽으로 들어가는 검은 구멍).
+  const mouth = new THREE.Mesh(
+    new THREE.CircleGeometry(26, 26),
+    new THREE.MeshBasicMaterial({ color: 0x05151a }),
+  );
+  mouth.position.set(0, 14, 50);
+  group.add(mouth);
+  const archMat = toonMat({ color: 0x3a525d, emissive: 0x101d23, emissiveIntensity: 0.2 });
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(27, 5, 12, 28), archMat);
+  arch.position.set(0, 14, 51);
+  group.add(arch);
+
+  for (let i = 0; i < 10; i += 1) {
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(7 + Math.random() * 16, 0), rockMaterial);
+    const a = Math.random() * Math.PI * 2;
+    rock.position.set(Math.cos(a) * (44 + Math.random() * 30), -16 + Math.random() * 30, 36 + Math.random() * 26);
+    rock.scale.set(1 + Math.random(), 0.8 + Math.random(), 1 + Math.random());
+    rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+    group.add(rock);
   }
 }
 
@@ -1046,44 +1269,63 @@ function setupPlankton() {
 }
 
 function setupMarineLife() {
-  // 니모풍 산호색·청록·남색 물고기 떼. 일부는 산호 마을 주변에 모여 헤엄친다.
   const fishPalette = [0xff8a5c, 0xffb347, 0xff6f61, 0x5fd6c0, 0x4aa3d9, 0x3b6fb0, 0xffd27a, 0xff7fa8];
-  const townCenter = sceneryPieces[0].position;
-  for (let i = 0; i < 90; i += 1) {
-    const fish = makeFish(0.7 + Math.random() * 1.7, fishPalette[Math.floor(Math.random() * fishPalette.length)]);
+  const pick = () => fishPalette[Math.floor(Math.random() * fishPalette.length)];
+  const addFish = (size, color, data) => {
+    const fish = makeFish(size, color);
     fish.userData.modelKind = "fish";
-    const nearTown = i % 2 === 0;
-    placeSwimmer(fish, {
-      center: nearTown
-        ? townCenter.clone().add(new THREE.Vector3((Math.random() - 0.5) * 160, 40 + Math.random() * 90, (Math.random() - 0.5) * 160))
-        : null,
-      radius: nearTown ? 40 + Math.random() * 120 : 120 + Math.random() * 560,
-      y: -70 - Math.random() * 310,
-      speed: 0.12 + Math.random() * 0.24,
-      bob: 3 + Math.random() * 9,
-      phase: Math.random() * Math.PI * 2,
-    });
+    placeSwimmer(fish, data);
     marineLifeGroup.add(fish);
+  };
+
+  // A. 산호 정원 — 작고 알록달록한 물고기가 좁게 맴돈다(밀도 높음).
+  for (let i = 0; i < 34; i += 1) {
+    addFish(0.6 + Math.random() * 0.9, pick(), {
+      center: ZONES.garden.clone().add(new THREE.Vector3((Math.random() - 0.5) * 90, 8 + Math.random() * 50, (Math.random() - 0.5) * 90)),
+      radius: 8 + Math.random() * 30, y: 0, speed: 0.5 + Math.random() * 0.6, bob: 3 + Math.random() * 5, phase: Math.random() * Math.PI * 2,
+    });
   }
 
-  for (let i = 0; i < 5; i += 1) {
+  // C. 물고기 떼의 길 — 한 방향으로 길게 흐르는 큰 무리.
+  const schoolColor = 0x3b6fb0;
+  for (let i = 0; i < 60; i += 1) {
+    addFish(0.8 + Math.random() * 0.7, i % 7 === 0 ? 0xff8a5c : schoolColor, {
+      center: ZONES.schoolPath.clone().add(new THREE.Vector3((Math.random() - 0.5) * 120, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 90)),
+      radius: 60 + Math.random() * 120, y: 0, speed: 0.18 + Math.random() * 0.1, bob: 4 + Math.random() * 6, phase: Math.random() * 0.6,
+    });
+  }
+
+  // B/E. 해초 숲·마을 주변에 흩어진 물고기.
+  for (let i = 0; i < 30; i += 1) {
+    const base = i % 2 === 0 ? ZONES.kelp : ZONES.town;
+    addFish(0.7 + Math.random() * 1.3, pick(), {
+      center: base.clone().add(new THREE.Vector3((Math.random() - 0.5) * 150, 20 + Math.random() * 90, (Math.random() - 0.5) * 150)),
+      radius: 30 + Math.random() * 90, y: 0, speed: 0.14 + Math.random() * 0.2, bob: 4 + Math.random() * 8, phase: Math.random() * Math.PI * 2,
+    });
+  }
+
+  for (let i = 0; i < 4; i += 1) {
     const shark = makeShark(5.5 + Math.random() * 2.8);
     shark.userData.modelKind = "shark";
-    placeSwimmer(shark, { radius: 240 + Math.random() * 520, y: -150 - Math.random() * 260, speed: 0.08 + Math.random() * 0.08, bob: 6 + Math.random() * 12, phase: Math.random() * Math.PI * 2, predator: true });
+    placeSwimmer(shark, { radius: 240 + Math.random() * 520, y: -160 - Math.random() * 240, speed: 0.08 + Math.random() * 0.08, bob: 6 + Math.random() * 12, phase: Math.random() * Math.PI * 2, predator: true });
     marineLifeGroup.add(shark);
   }
 
-  for (let i = 0; i < 6; i += 1) {
-    const jelly = makeJellyfish(3.2 + Math.random() * 3);
+  // D. 해파리·빛기둥 공간 — 해파리가 모여 고요하게 떠 있다(밀도 높음).
+  for (let i = 0; i < 12; i += 1) {
+    const jelly = makeJellyfish(2.8 + Math.random() * 3.4);
     jelly.userData.modelKind = "jelly";
-    placeSwimmer(jelly, { radius: 60 + Math.random() * 320, y: -110 - Math.random() * 230, speed: 0.04 + Math.random() * 0.05, bob: 18 + Math.random() * 22, phase: Math.random() * Math.PI * 2, jelly: true });
+    placeSwimmer(jelly, {
+      center: ZONES.jellies.clone().add(new THREE.Vector3((Math.random() - 0.5) * 150, 20 + Math.random() * 130, (Math.random() - 0.5) * 150)),
+      radius: 16 + Math.random() * 40, y: 0, speed: 0.05 + Math.random() * 0.05, bob: 16 + Math.random() * 20, phase: Math.random() * Math.PI * 2, jelly: true,
+    });
     marineLifeGroup.add(jelly);
   }
 
   for (let i = 0; i < 2; i += 1) {
     const whale = makeOceanWhale(13 + Math.random() * 5);
     whale.userData.modelKind = "whale";
-    placeSwimmer(whale, { radius: 390 + Math.random() * 380, y: -230 - Math.random() * 230, speed: 0.035 + Math.random() * 0.025, bob: 14 + Math.random() * 18, phase: Math.random() * Math.PI * 2, whale: true });
+    placeSwimmer(whale, { radius: 390 + Math.random() * 380, y: -240 - Math.random() * 220, speed: 0.035 + Math.random() * 0.025, bob: 14 + Math.random() * 18, phase: Math.random() * Math.PI * 2, whale: true });
     marineLifeGroup.add(whale);
   }
   document.documentElement.dataset.oceanLife = String(marineLifeGroup.children.length);
@@ -1403,9 +1645,19 @@ window.__oceanSample = (cols = 9, rows = 6) => {
   return rowsOut;
 };
 
+const SWAY_NEAR = 95;
+function swayNear(center) {
+  const d2 = diver.position.distanceToSquared(center);
+  const r2 = SWAY_NEAR * SWAY_NEAR;
+  return d2 > r2 ? 0 : 1 - Math.sqrt(d2) / SWAY_NEAR;
+}
+
 function updateScenery(elapsed) {
-  for (const part of swayingParts) {
-    part.rotation.z += Math.sin(elapsed * 1.1 + part.userData.wavePhase) * 0.0011;
+  // 해초·부채산호는 평소 천천히 흔들리고, 잠수자가 지나가면 더 크게 흔들린다.
+  for (const s of swayingParts) {
+    const near = swayNear(s.center);
+    const amp = s.amp * (1 + near * 5);
+    s.part.rotation.z = s.part.userData.swayBaseZ + Math.sin(elapsed * 1.1 + s.phase + near * 3) * amp;
   }
   for (const plume of plumeParts) {
     plume.rotation.y += 0.006;
@@ -1450,10 +1702,14 @@ function updateWaterStyle(elapsed, delta) {
   }
 
   if (bubbleField) updateBubbles(elapsed, delta);
+  updateDriftField(delta, elapsed);
 
-  if (diver.position.y > 14 && velocity.length() > 14 && elapsed > nextWakeAt) {
-    nextWakeAt = elapsed + 0.55;
-    spawnSurfaceSplash(diver.position, 0.55);
+  // 수면 가까이 올라가면 빛이 강해지고(노출↑) 파문·포말이 자주 생긴다.
+  if (crayonUniforms) crayonUniforms.uExposure.value = EXPOSURE * (1 + (1 - depthT) * 0.14);
+  const nearSurface = diver.position.y > -24;
+  if (nearSurface && velocity.lengthSq() > 90 && elapsed > nextWakeAt) {
+    nextWakeAt = elapsed + 0.4;
+    spawnSurfaceSplash(diver.position, 0.6);
   }
 
   updateRipples(delta);
@@ -1506,6 +1762,8 @@ function updateMarineLife(elapsed, delta) {
         swim.center.y + Math.sin(lifeElapsed * 0.5 + swim.phase) * swim.bob,
         swim.center.z + Math.cos(lifeElapsed * swim.speed * 0.8 + swim.phase) * swim.radius * 0.4,
       );
+      // 잠수자가 가까이 오면 천천히 밀려난다.
+      applyFlee(creature, 30, 10, delta);
       if (creature.userData.dome) {
         const pulse = 1 + Math.sin(lifeElapsed * 2 + swim.phase) * 0.12;
         creature.userData.dome.scale.set(pulse, 0.82 * (2 - pulse), pulse);
@@ -1530,8 +1788,13 @@ function updateMarineLife(elapsed, delta) {
     creature.rotation.y = Math.atan2(heading.x, heading.z) + Math.PI / 2;
     creature.rotation.z = wobble * (swim.whale ? 0.025 : 0.06);
 
+    // 작은 물고기는 잠수자가 다가오면 흩어졌다가, 멀어지면 제자리로 돌아온다.
+    let fleeIntensity = 0;
+    if (!swim.predator && !swim.whale) fleeIntensity = applyFlee(creature, 42, 26, delta);
+
     if (creature.userData.tail) {
-      creature.userData.tail.rotation.y = Math.sin(lifeElapsed * (swim.whale ? 1.6 : 5.8) + swim.phase) * (swim.whale ? 0.08 : 0.22);
+      const beat = 5.8 * (1 + fleeIntensity * 2.2);
+      creature.userData.tail.rotation.y = Math.sin(lifeElapsed * (swim.whale ? 1.6 : beat) + swim.phase) * (swim.whale ? 0.08 : 0.22 + fleeIntensity * 0.2);
     }
     creature.userData.flukes?.forEach((fluke, index) => {
       fluke.rotation.y = Math.sin(lifeElapsed * 1.45 + swim.phase + index) * 0.08;
@@ -1539,27 +1802,65 @@ function updateMarineLife(elapsed, delta) {
   });
 }
 
+const _fleeVec = new THREE.Vector3();
+// 잠수자가 반경 안으로 들어오면 생물을 바깥으로 밀어낸다(가까울수록 강하게).
+// 매 프레임 절차적 위치 위에 덧씌우므로 다가가면 흩어지고 멀어지면 복원된다.
+function applyFlee(creature, radius, strength, _delta) {
+  _fleeVec.subVectors(creature.position, diver.position);
+  const dist = _fleeVec.length();
+  if (dist >= radius || dist < 0.001) return 0;
+  const t = 1 - dist / radius;
+  creature.position.addScaledVector(_fleeVec, (strength * t * t) / dist);
+  return t;
+}
+
 function updateSwim(delta, elapsed) {
-  diver.rotation.set(pitch, yaw, Math.sin(elapsed * 0.8) * 0.01, "YXZ");
+  const speedT = THREE.MathUtils.clamp(velocity.length() / 40, 0, 1);
+  const lateral = move.right - move.left;
+
+  // 몸을 좌우 스트레이프 방향으로 살짝 기울이고, 항상 미세하게 흔들린다(물살).
+  const rollTarget = -lateral * 0.05 + Math.sin(elapsed * 0.7) * 0.012;
+  rollCurrent += (rollTarget - rollCurrent) * THREE.MathUtils.clamp(delta * 2.5, 0, 1);
+  diver.rotation.set(pitch + Math.sin(elapsed * 0.6) * 0.004, yaw, rollCurrent, "YXZ");
+
   camera.getWorldDirection(forward);
   right.set(1, 0, 0).applyQuaternion(diver.quaternion).normalize();
   up.set(0, 1, 0).applyQuaternion(diver.quaternion).normalize();
 
-  const cruiseSpeed = 46;
-  const boost = move.boost ? 1.8 : 1;
+  // 머리 흔들림(camBob): 헤엄칠수록 커지고, 가만히 있어도 물속에서 천천히 출렁인다.
+  const bob = 0.35 + speedT * 1.4;
+  camBob.target.set(
+    Math.sin(elapsed * 1.5) * (0.3 + speedT * 0.7),
+    Math.sin(elapsed * 2.2) * bob * 0.5 + Math.sin(elapsed * 0.7) * 0.35,
+    0,
+  );
+  camBob.current.lerp(camBob.target, THREE.MathUtils.clamp(delta * 2.6, 0, 1));
+  camera.position.copy(camBob.current);
+
+  const cruiseSpeed = 40;
+  const boost = move.boost ? 1.9 : 1;
   const desired = new THREE.Vector3();
   desired.addScaledVector(forward, move.forward - move.back);
   desired.addScaledVector(right, move.right - move.left);
   desired.addScaledVector(up, move.up - move.down);
-  if (desired.lengthSq() > 0) {
+  const hasInput = desired.lengthSq() > 0;
+
+  if (hasInput) {
     desired.normalize().multiplyScalar(cruiseSpeed * boost);
-    velocity.lerp(desired, THREE.MathUtils.clamp(delta * 3.4, 0, 1));
+    // 상승은 부력으로 조금 쉽게, 하강은 약간 무겁게(물속 부력감).
+    if (desired.y > 0) desired.y *= 1.15;
+    else if (desired.y < 0) desired.y *= 0.85;
+    // 무거운 가속 — 천천히 속도가 붙는 관성.
+    velocity.lerp(desired, THREE.MathUtils.clamp(delta * 2.4, 0, 1));
   } else {
-    velocity.multiplyScalar(Math.pow(0.1, delta));
+    // 입력이 없어도 완전히 멈추지 않고 천천히 미끄러지며 떠다닌다.
+    velocity.multiplyScalar(Math.pow(0.55, delta));
+    velocity.y += Math.sin(elapsed * 0.5) * delta * 1.1; // 중성 부력 — 가만히 출렁임
   }
 
-  velocity.multiplyScalar(Math.pow(0.74, delta));
-  const maxSpeed = 44 * boost;
+  // 물 저항 — 항상 부드럽게 감속하여 둥둥 뜨는 관성을 만든다.
+  velocity.multiplyScalar(Math.pow(0.82, delta));
+  const maxSpeed = 40 * boost;
   if (velocity.length() > maxSpeed) velocity.setLength(maxSpeed);
   diver.position.addScaledVector(velocity, delta);
   diver.position.y = THREE.MathUtils.clamp(diver.position.y, minDiveY, maxDiveY);
