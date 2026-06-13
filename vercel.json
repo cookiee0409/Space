@@ -5,6 +5,10 @@
     {
       "source": "/ocean",
       "destination": "/ocean.html"
+    },
+    {
+      "source": "/game",
+      "destination": "/game.html"
     }
   ]
 }
