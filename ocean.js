@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/GLTFLoader.js";
+import { EffectComposer } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/postprocessing/ShaderPass.js";
 
 const canvas = document.getElementById("ocean");
 const intro = document.getElementById("intro");
@@ -21,8 +24,9 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.22;
+// 톤매핑/색공간 변환은 크레용 후처리 패스에서 직접 처리한다.
+renderer.toneMapping = THREE.NoToneMapping;
+const EXPOSURE = 1.18;
 
 // 잠수자(1인칭 카메라 리그). 자유롭게 헤엄치며 만화 바다를 둘러본다.
 const diver = new THREE.Object3D();
@@ -56,6 +60,8 @@ let yaw = spawnYaw;
 let pitch = spawnPitch;
 let zoomFov = camera.fov;
 let started = false;
+let composer = null;
+let crayonUniforms = null;
 
 const renderStatus = { frame: 0, centerPixel: [0, 0, 0, 0], sampleLuma: 0, lastSampleAt: -1, webgl: true };
 window.__oceanStatus = renderStatus;
@@ -133,6 +139,140 @@ setupMarineLife();
 loadMarineLifeModels();
 setupControls();
 resetView();
+
+// ===== 크레용/종이 후처리 =====
+// 장면 전체를 한 장의 손그림 그림처럼 보이게 하는 풀스크린 패스.
+// (1) 종이 결 질감, (2) 색을 납작하게 뭉개는 포스터라이즈,
+// (3) 손그림 외곽선(소벨 엣지), (4) 미세한 손떨림 왜곡을 함께 입힌다.
+const CrayonShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    tPaper: { value: null },
+    uResolution: { value: new THREE.Vector2(1, 1) },
+    uExposure: { value: EXPOSURE },
+    uAspect: { value: 1 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform sampler2D tPaper;
+    uniform vec2 uResolution;
+    uniform float uExposure;
+    uniform float uAspect;
+    varying vec2 vUv;
+
+    vec3 aces(vec3 x) {
+      return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+    }
+    float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+    vec3 toSRGB(vec3 c) { return pow(clamp(c, 0.0, 1.0), vec3(0.4545)); }
+    vec3 sampleScene(vec2 uv) { return aces(texture2D(tDiffuse, uv).rgb * uExposure); }
+
+    void main() {
+      vec2 texel = 1.0 / uResolution;
+      vec3 paper = texture2D(tPaper, vUv * vec2(uAspect, 1.0) * 2.6).rgb;
+
+      // 손그림 같은 미세한 떨림.
+      vec2 uv = vUv + (paper.rg - 0.5) * texel * 3.0;
+
+      vec3 col = sampleScene(uv);
+
+      // 크레용처럼 색을 납작한 단계로 뭉갠다.
+      float levels = 5.0;
+      col = floor(col * levels + 0.5) / levels;
+
+      // 소벨 엣지로 연필 외곽선을 그린다.
+      float tl = luma(sampleScene(uv + texel * vec2(-1.0, -1.0)));
+      float tm = luma(sampleScene(uv + texel * vec2(0.0, -1.0)));
+      float tr = luma(sampleScene(uv + texel * vec2(1.0, -1.0)));
+      float ml = luma(sampleScene(uv + texel * vec2(-1.0, 0.0)));
+      float mr = luma(sampleScene(uv + texel * vec2(1.0, 0.0)));
+      float bl = luma(sampleScene(uv + texel * vec2(-1.0, 1.0)));
+      float bm = luma(sampleScene(uv + texel * vec2(0.0, 1.0)));
+      float br = luma(sampleScene(uv + texel * vec2(1.0, 1.0)));
+      float gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
+      float gy = -tl - 2.0 * tm - tr + bl + 2.0 * bm + br;
+      float edge = sqrt(gx * gx + gy * gy);
+      float outline = 1.0 - smoothstep(0.22, 0.6, edge);
+      // 종이 결에 따라 선이 끊기는 거친 손그림 느낌.
+      outline = clamp(outline + (paper.b - 0.5) * 0.3, 0.0, 1.0);
+      col = mix(vec3(0.13, 0.2, 0.2), col, outline * 0.82 + 0.18);
+
+      // 종이 올(tooth) — 크레용이 종이 결을 완전히 덮지 못하는 표현.
+      float tooth = mix(0.74, 1.1, paper.r);
+      col *= tooth;
+      col = mix(col, col * 0.85 + paper.r * 0.14, 0.2);
+
+      gl_FragColor = vec4(toSRGB(col), 1.0);
+    }
+  `,
+};
+
+function makePaperTexture() {
+  const paperCanvas = document.createElement("canvas");
+  paperCanvas.width = 512;
+  paperCanvas.height = 512;
+  const context = paperCanvas.getContext("2d");
+  context.fillStyle = "#efe7d2";
+  context.fillRect(0, 0, 512, 512);
+
+  const image = context.getImageData(0, 0, 512, 512);
+  const data = image.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const noise = (Math.random() - 0.5) * 42;
+    data[i] += noise;
+    data[i + 1] += noise;
+    data[i + 2] += noise * 0.8;
+  }
+  context.putImageData(image, 0, 0);
+
+  for (let i = 0; i < 1100; i += 1) {
+    context.strokeStyle = `rgba(${110 + Math.random() * 90}, ${100 + Math.random() * 80}, ${80 + Math.random() * 60}, 0.05)`;
+    context.lineWidth = 1;
+    const angle = Math.random() * Math.PI;
+    const length = 8 + Math.random() * 28;
+    const px = Math.random() * 512;
+    const py = Math.random() * 512;
+    context.beginPath();
+    context.moveTo(px, py);
+    context.lineTo(px + Math.cos(angle) * length, py + Math.sin(angle) * length);
+    context.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(paperCanvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function setupPostFX() {
+  const size = new THREE.Vector2();
+  renderer.getSize(size);
+  const pr = renderer.getPixelRatio();
+
+  const renderTarget = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType });
+  composer = new EffectComposer(renderer, renderTarget);
+  composer.setPixelRatio(pr);
+  composer.setSize(size.x, size.y);
+  composer.addPass(new RenderPass(scene, camera));
+
+  const crayonPass = new ShaderPass(CrayonShader);
+  crayonPass.uniforms.tPaper.value = makePaperTexture();
+  crayonPass.uniforms.uResolution.value.set(size.x * pr, size.y * pr);
+  crayonPass.uniforms.uAspect.value = size.x / size.y;
+  composer.addPass(crayonPass);
+  crayonUniforms = crayonPass.uniforms;
+}
+
+// 후처리 셰이더/리소스 정의가 끝난 뒤 초기화하고 렌더 루프를 시작한다.
+setupPostFX();
 animate();
 
 function setupLights() {
@@ -439,7 +579,7 @@ function makeWaterSurface() {
           base = mix(base, uSky, fresnel * 0.55);
 
           float spec = max(dot(reflect(-uSun, normal), view), 0.0);
-          float glint = step(0.965, spec) * 0.85 + smoothstep(0.8, 0.96, spec) * 0.22;
+          float glint = step(0.972, spec) * 0.4 + smoothstep(0.82, 0.97, spec) * 0.12;
           base += vec3(1.0, 0.97, 0.84) * glint;
 
           float foamEdge = heightT
@@ -1226,7 +1366,8 @@ function tick(delta, elapsed) {
   updateCartoonWater(elapsed, delta);
   updateMarineLife(elapsed, delta);
   updateSwim(delta, elapsed);
-  renderer.render(scene, camera);
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
   sampleRender(elapsed);
 }
 
@@ -1464,4 +1605,10 @@ window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (composer) {
+    const pr = renderer.getPixelRatio();
+    composer.setSize(window.innerWidth, window.innerHeight);
+    crayonUniforms.uResolution.value.set(window.innerWidth * pr, window.innerHeight * pr);
+    crayonUniforms.uAspect.value = window.innerWidth / window.innerHeight;
+  }
 });
